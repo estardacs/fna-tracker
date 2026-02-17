@@ -1,36 +1,139 @@
-import { supabase } from '@/lib/supabase'
+import { getDailyStats } from '@/lib/data-processor';
+import ActivityChart from '@/components/dashboard/ActivityChart';
+import AppsList from '@/components/dashboard/AppsList';
+import RecentActivity from '@/components/dashboard/RecentActivity';
+import LocationCard from '@/components/dashboard/LocationCard';
+import DateNavigator from '@/components/dashboard/DateNavigator';
+import { BookOpen, Clock, Zap } from 'lucide-react';
 
-export default async function Home() {
-  // 1. Pedir los datos a Supabase
-  const { data: metrics, error } = await supabase
-    .from('metrics')
-    .select('*')
-    .order('created_at', { ascending: false });
+export const dynamic = 'force-dynamic'; // No caching, real-time data
 
-  if (error) return <p>Error cargando datos...</p>;
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const params = await searchParams;
+  const targetDate = params.date;
+  const stats = await getDailyStats(targetDate);
+
+  // Formatear la lista de libros (Lista con bullets y tiempo real)
+  const booksContent = stats.booksReadToday.length > 0 ? (
+    <ul className="list-disc list-inside space-y-3 mt-3 text-gray-300">
+      {stats.booksReadToday.map((b, idx) => (
+        <li key={idx} className="text-xs md:text-sm leading-relaxed border-b border-gray-800/50 pb-2 last:border-0">
+          <span className="font-medium text-gray-100">{b.title}</span>
+          <div className="flex gap-3 mt-1 ml-5 text-[10px] md:text-xs text-gray-500 font-mono">
+            <span className="bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">
+              {b.percent}%
+            </span>
+            <span className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">
+              {formatDuration(b.timeSpentSec / 60)} 
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="text-gray-500 text-sm mt-2 italic">Sin lectura registrada</p>
+  );
 
   return (
-    <main className="p-8 min-h-screen bg-slate-900 text-white">
-      <h1 className="text-3xl font-bold mb-8 text-emerald-400">Mi Dashboard de Vida</h1>
+    <main className="min-h-screen bg-black text-white p-6 md:p-12 font-sans selection:bg-blue-500/30">
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {metrics?.map((m) => (
-          <div key={m.id} className="p-6 bg-slate-800 rounded-xl border border-slate-700 shadow-xl">
-            <p className="text-slate-400 text-sm uppercase font-semibold">{m.metric_type}</p>
-            <h2 className="text-4xl font-bold my-2">
-              {m.value} <span className="text-lg font-normal text-slate-500">{m.unit}</span>
-            </h2>
-            <div className="flex justify-between items-center mt-4 pt-4 border-t border-slate-700">
-              <span className="text-xs text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded">
-                {m.device_id}
-              </span>
-              <span className="text-xs text-slate-500">
-                {new Date(m.created_at).toLocaleDateString()}
-              </span>
-            </div>
+      {/* Header */}
+      <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-4">
+        <div>
+          <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            Fña Stats
+          </h1>
+          <p className="text-gray-500 mt-2 text-sm">
+            Panel de Control Personal
+          </p>
+        </div>
+        
+        <div className="flex flex-col items-end gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-900 px-3 py-1 rounded-full border border-gray-800">
+            <div className={`w-2 h-2 rounded-full ${targetDate ? 'bg-yellow-500' : 'bg-green-500 animate-pulse'}`}></div>
+            {targetDate ? 'VISTA HISTÓRICA' : 'SISTEMA ONLINE'}
           </div>
-        ))}
+          <DateNavigator />
+        </div>
+      </header>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <KpiCard 
+          title="Tiempo en PC" 
+          value={formatDuration(stats.pcTotalMinutes)} 
+          icon={<Zap className="text-blue-400" />}
+          subtext={targetDate ? "En esa fecha" : "Hoy"}
+        />
+        <KpiCard 
+          title="Tiempo en Móvil" 
+          value={formatDuration(stats.mobileTotalMinutes)} 
+          icon={<Clock className="text-emerald-400" />}
+          subtext={targetDate ? "En esa fecha" : "Hoy"}
+        />
+        <KpiCard 
+          title="Lectura" 
+          value={formatDuration(stats.readingMinutes)} 
+          icon={<BookOpen className="text-purple-400" />}
+          subtext={booksContent}
+          isLongText
+        />
       </div>
+
+      {/* Main Chart */}
+      <section className="mb-12">
+        <ActivityChart data={stats.activityTimeline} />
+      </section>
+
+      {/* Detailed Lists & Logs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <AppsList title="Historial PC" apps={stats.pcAppHistory} type="pc" />
+        <AppsList title="Historial Móvil" apps={stats.topMobileApps} type="mobile" />
+        <LocationCard 
+          officeMinutes={stats.locationStats.officeMinutes} 
+          homeMinutes={stats.locationStats.homeMinutes}
+          outsideMinutes={stats.locationStats.outsideMinutes}
+          lastStatus={stats.lastPcStatus}
+          lastMobileStatus={stats.lastMobileStatus}
+        />
+        <RecentActivity events={stats.recentEvents} />
+      </div>
+
     </main>
   );
+}
+
+function KpiCard({ title, value, icon, subtext, isLongText = false }: any) {
+  return (
+    <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-800 hover:border-gray-700 transition-colors group h-full">
+      <div className="flex justify-between items-start mb-4">
+        <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">{title}</span>
+        <div className="p-2 bg-gray-800/50 rounded-lg group-hover:bg-gray-800 transition-colors">
+          {icon}
+        </div>
+      </div>
+      <div className="flex flex-col">
+        <span className="text-4xl font-bold text-gray-100 tracking-tight mb-1">{value}</span>
+        <div className={`text-sm text-gray-500 ${isLongText ? '' : 'truncate'}`}>
+          {subtext}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatDuration(totalMinutes: number) {
+  const h = Math.floor(totalMinutes / 60);
+  const m = Math.floor(totalMinutes % 60);
+  const s = Math.round((totalMinutes % 1) * 60);
+  
+  const hh = h.toString().padStart(2, '0');
+  const mm = m.toString().padStart(2, '0');
+  const ss = s.toString().padStart(2, '0');
+  
+  return `${hh}:${mm}:${ss}`;
 }
