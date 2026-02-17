@@ -294,7 +294,6 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       } else {
         durationSec = (new Date().getTime() - new Date(currentEvent.created_at).getTime()) / 1000;
       }
-      if (durationSec > 30 * 60) durationSec = 0; 
       if (durationSec < 0) durationSec = 0;
 
       const durationMin = durationSec / 60;
@@ -337,7 +336,11 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         if (readingData) {
           for (const read of readingData) {
             const readTime = new Date(read.created_at).getTime();
-            if (readTime <= eventTime + (5 * 60 * 1000)) {
+            const sessionEnd = eventTime + (durationSec * 1000);
+            const lowerBound = eventTime - (20 * 60 * 1000); // 20 mins before start
+            const upperBound = sessionEnd + (20 * 60 * 1000); // 20 mins after end
+
+            if (readTime >= lowerBound && readTime <= upperBound) {
               activeBook = read.metadata?.book_title?.replace(/\.(epub|pdf|mobi)$/i, '').trim() || 'Desconocido';
               break; 
             }
