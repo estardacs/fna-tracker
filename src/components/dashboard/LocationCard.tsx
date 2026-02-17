@@ -79,7 +79,7 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-gray-800/50 text-[10px] text-gray-600 text-right font-mono">
-              Último latido: {new Date(lastStatus.lastSeen).toLocaleTimeString()}
+              Último latido: {formatLastSeen(lastStatus.lastSeen)}
             </div>
           </div>
         ) : null}
@@ -100,7 +100,7 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-gray-800/50 text-[10px] text-gray-600 text-right font-mono">
-              Último latido: {new Date(lastMobileStatus.lastSeen).toLocaleTimeString()}
+              Último latido: {formatLastSeen(lastMobileStatus.lastSeen)}
             </div>
           </div>
         ) : null}
@@ -108,6 +108,16 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
       </div>
     </div>
   );
+}
+
+function formatLastSeen(isoString: string) {
+  return new Intl.DateTimeFormat('es-CL', {
+    timeZone: 'America/Santiago',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(new Date(isoString));
 }
 
 function formatTime(minutes: number) {

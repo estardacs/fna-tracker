@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { startOfDay, endOfDay, format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { unstable_noStore as noStore } from 'next/cache';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,6 +47,7 @@ export type DashboardStats = {
 };
 
 export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
+  noStore(); // Opt out of static rendering and data caching (Vercel fix)
   const now = new Date();
   let targetDate = toZonedTime(now, TIMEZONE);
 
