@@ -11,6 +11,8 @@ const supabase = createClient(
 
 const TIMEZONE = 'America/Santiago';
 
+const IGNORED_APPS = ['Lanzador del sistema', 'Pantalla Apagada', 'Reloj', 'Clock'];
+
 const formatWifiName = (ssid: string | undefined): string => {
   if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet') return 'Desconocido';
   if (ssid === 'GeCo') return 'Oficina';
@@ -257,7 +259,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
 
         Object.entries(breakdown).forEach(([app, seconds]) => {
           const sec = Number(seconds);
-          if (sec > 0 && app !== 'Idle (Inactivo)') {
+          if (sec > 0 && app !== 'Idle (Inactivo)' && !IGNORED_APPS.includes(app)) {
             totalSeconds += sec;
             let cleanApp = app === 'System/Unknown' ? 'Sistema' : app;
             
@@ -300,6 +302,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       } 
       else {
         // OLD FORMAT
+        if (IGNORED_APPS.includes(row.metadata?.process_name)) continue;
+
         const minutes = Number(row.value) || 1; 
         
         // Accumulate Exact Time (Estimate for old format)
@@ -386,7 +390,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       
       // Mark Timeline (Priority 1)
       // Only mark if meaningful activity (not Launcher)
-      if (appName !== 'Lanzador del sistema' && appName !== 'Pantalla Apagada' && durationSec > 5) {
+      if (!IGNORED_APPS.includes(appName) && durationSec > 5) {
          markSlot(currentEvent.created_at, durationSec, 1);
          
          // Accumulate Exact Time (Only if meaningful)
@@ -404,7 +408,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       else if (durationMin > 0) { rawOutsideMinutes += durationMin; locBreakdown.mobile.outside += durationMin; }
 
       // Apps History
-      if (appName !== 'Lanzador del sistema' && appName !== 'Pantalla Apagada') {
+      if (!IGNORED_APPS.includes(appName)) {
          mobileAppsMap.set(appName, (mobileAppsMap.get(appName) || 0) + durationMin);
          
          const eventDate = new Date(currentEvent.created_at);
