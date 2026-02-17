@@ -6,6 +6,8 @@ import LocationCard from '@/components/dashboard/LocationCard';
 import DateNavigator from '@/components/dashboard/DateNavigator';
 import { BookOpen, Clock, Zap } from 'lucide-react';
 
+import SantiagoClock from '@/components/dashboard/SantiagoClock';
+
 export const dynamic = 'force-dynamic'; // No caching, real-time data
 
 export default async function Home({
@@ -39,15 +41,18 @@ export default async function Home({
   );
 
   return (
-    <main className="min-h-screen bg-black text-white p-6 md:p-12 font-sans selection:bg-blue-500/30">
+    <main className="min-h-screen bg-black text-white p-6 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
       
       {/* Header */}
       <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            Fña Stats
-          </h1>
-          <p className="text-gray-500 mt-2 text-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Fña Stats
+            </h1>
+            <SantiagoClock />
+          </div>
+          <p className="text-gray-500 text-sm">
             Panel de Control Personal
           </p>
         </div>
@@ -90,7 +95,7 @@ export default async function Home({
       </section>
 
       {/* Detailed Lists & Logs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-1">
         <AppsList title="Historial PC" apps={stats.pcAppHistory} type="pc" />
         <AppsList title="Historial Móvil" apps={stats.topMobileApps} type="mobile" />
         <LocationCard 
@@ -102,6 +107,22 @@ export default async function Home({
         />
         <RecentActivity events={stats.recentEvents} />
       </div>
+
+      {/* Debug Footer */}
+      <footer className="mt-12 border-t border-gray-900 pt-6 text-[10px] text-gray-600 font-mono">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p className="font-bold text-gray-500 mb-1">Diagnóstico de Servidor</p>
+            <p>Server Time (UTC): <span className="text-gray-400">{stats.debugInfo?.serverTime}</span></p>
+            <p>Query Timezone: <span className="text-gray-400">{stats.debugInfo?.timezone}</span></p>
+          </div>
+          <div>
+            <p className="font-bold text-gray-500 mb-1">Rango de Consulta (ISO)</p>
+            <p>Start: <span className="text-blue-900">{stats.debugInfo?.queryStart}</span></p>
+            <p>End: <span className="text-blue-900">{stats.debugInfo?.queryEnd}</span></p>
+          </div>
+        </div>
+      </footer>
 
     </main>
   );
