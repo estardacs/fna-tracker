@@ -86,7 +86,7 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0.5rem', color: '#f8fafc', fontSize: '12px', padding: '8px' }}
                     itemStyle={{ color: '#e2e8f0' }}
-                    formatter={(value: number) => [formatTime(value), 'Tiempo']}
+                    formatter={(value: any) => [formatTime(value || 0), 'Tiempo']}
                     separator=": "
                     cursor={false}
                     position={{ y: 0 }} 
