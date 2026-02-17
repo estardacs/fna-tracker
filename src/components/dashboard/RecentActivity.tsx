@@ -89,8 +89,11 @@ export default function RecentActivity({ events }: { events: Event[] }) {
 
 function formatTime(isoString: string) {
   const date = new Date(isoString);
-  const hh = date.getHours().toString().padStart(2, '0');
-  const mm = date.getMinutes().toString().padStart(2, '0');
-  const ss = date.getSeconds().toString().padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
+  return new Intl.DateTimeFormat('es-CL', {
+    timeZone: 'America/Santiago',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(date);
 }

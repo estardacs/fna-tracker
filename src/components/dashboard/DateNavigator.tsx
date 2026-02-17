@@ -3,17 +3,19 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { format, addDays, subDays, parseISO, isSameDay } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 import { es } from 'date-fns/locale';
 
 export default function DateNavigator() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Obtener fecha actual de la URL o usar Hoy
+  // Obtener fecha actual de la URL o usar Hoy (en Santiago)
   const dateParam = searchParams.get('date');
-  const currentDate = dateParam ? parseISO(dateParam) : new Date();
+  const nowSantiago = toZonedTime(new Date(), 'America/Santiago');
+  const currentDate = dateParam ? parseISO(dateParam) : nowSantiago;
   
-  const isToday = isSameDay(currentDate, new Date());
+  const isToday = isSameDay(currentDate, nowSantiago);
 
   const navigate = (direction: 'prev' | 'next') => {
     const newDate = direction === 'prev' ? subDays(currentDate, 1) : addDays(currentDate, 1);
