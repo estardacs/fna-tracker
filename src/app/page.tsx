@@ -48,7 +48,7 @@ export default async function Home({
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Fña Stats
+              Fña Tracker
             </h1>
             <SantiagoClock />
           </div>

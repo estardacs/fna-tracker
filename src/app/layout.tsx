@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Fña Stats",
+  title: "Fña Tracker",
   description: "Personal Life Dashboard",
   icons: {
     icon: "/sand-clock.svg",
