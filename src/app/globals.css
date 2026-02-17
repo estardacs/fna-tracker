@@ -24,3 +24,31 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* --- ESTILOS DE SCROLLBAR INTEGRADOS AL DISEÑO --- */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1f2937 #000000; /* thumb (gray-800) y track (black) */
+}
+
+/* Chrome, Edge, Safari */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000; /* Negro total como el fondo de la app */
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #1f2937; /* gray-800: igual que los bordes de tus tarjetas */
+  border-radius: 10px;
+  border: 2px solid #000000; /* Crea un efecto de padding */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #374151; /* gray-700: un poco más claro al interactuar */
+}

@@ -95,7 +95,7 @@ export default async function Home({
       </section>
 
       {/* Detailed Lists & Logs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-1">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <AppsList title="Historial PC" apps={stats.pcAppHistory} type="pc" />
         <AppsList title="Historial Móvil" apps={stats.topMobileApps} type="mobile" />
         <LocationCard 
@@ -107,22 +107,6 @@ export default async function Home({
         />
         <RecentActivity events={stats.recentEvents} />
       </div>
-
-      {/* Debug Footer */}
-      <footer className="mt-12 border-t border-gray-900 pt-6 text-[10px] text-gray-600 font-mono">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="font-bold text-gray-500 mb-1">Diagnóstico de Servidor</p>
-            <p>Server Time (UTC): <span className="text-gray-400">{stats.debugInfo?.serverTime}</span></p>
-            <p>Query Timezone: <span className="text-gray-400">{stats.debugInfo?.timezone}</span></p>
-          </div>
-          <div>
-            <p className="font-bold text-gray-500 mb-1">Rango de Consulta (ISO)</p>
-            <p>Start: <span className="text-blue-900">{stats.debugInfo?.queryStart}</span></p>
-            <p>End: <span className="text-blue-900">{stats.debugInfo?.queryEnd}</span></p>
-          </div>
-        </div>
-      </footer>
 
     </main>
   );

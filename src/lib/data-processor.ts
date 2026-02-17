@@ -38,12 +38,6 @@ export type DashboardStats = {
   locationStats: { officeMinutes: number; homeMinutes: number; outsideMinutes: number };
   lastPcStatus: { battery: number; wifi: string; lastSeen: string; isCharging: boolean } | null;
   lastMobileStatus: { wifi: string; lastSeen: string } | null;
-  debugInfo?: {
-    serverTime: string;
-    queryStart: string;
-    queryEnd: string;
-    timezone: string;
-  };
 };
 
 export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
@@ -431,12 +425,6 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes },
     
     lastPcStatus,
-    lastMobileStatus,
-    debugInfo: {
-      serverTime: new Date().toISOString(),
-      queryStart: startIso,
-      queryEnd: endIso,
-      timezone: TIMEZONE
-    }
+    lastMobileStatus
   };
 }
