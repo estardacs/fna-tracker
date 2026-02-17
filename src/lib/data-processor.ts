@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { startOfDay, endOfDay, format, parseISO } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { unstable_noStore as noStore } from 'next/cache';
 
 const supabase = createClient(
@@ -52,13 +52,20 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   let targetDate = toZonedTime(now, TIMEZONE);
 
   if (dateStr) {
-    targetDate = new Date(dateStr + 'T12:00:00'); 
+    // If a specific date is requested, parse it as noon Santiago time to avoid edge cases
+    targetDate = toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE);
   }
 
-  const startSantiago = startOfDay(targetDate);
-  const endSantiago = endOfDay(targetDate);
-  const startIso = startSantiago.toISOString();
-  const endIso = endSantiago.toISOString();
+  // 1. Calculate Start/End in "Local Time" conceptual representation
+  const startSantiagoLocal = startOfDay(targetDate);
+  const endSantiagoLocal = endOfDay(targetDate);
+
+  // 2. Convert those Local Times back to absolute UTC timestamps for the DB query
+  const startUtc = fromZonedTime(startSantiagoLocal, TIMEZONE);
+  const endUtc = fromZonedTime(endSantiagoLocal, TIMEZONE);
+  
+  const startIso = startUtc.toISOString();
+  const endIso = endUtc.toISOString();
 
   console.log(`[DEBUG] getDailyStats called at ${new Date().toISOString()}`);
   console.log(`[DEBUG] Target Date: ${targetDate.toISOString()} (Santiago)`);
