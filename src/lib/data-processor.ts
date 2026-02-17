@@ -60,8 +60,12 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const startIso = startSantiago.toISOString();
   const endIso = endSantiago.toISOString();
 
+  console.log(`[DEBUG] getDailyStats called at ${new Date().toISOString()}`);
+  console.log(`[DEBUG] Target Date: ${targetDate.toISOString()} (Santiago)`);
+  console.log(`[DEBUG] Query Range: ${startIso} to ${endIso}`);
+
   // Fetch Data
-  const { data: pcData } = await supabase
+  const { data: pcData, error: pcError } = await supabase
     .from('metrics')
     .select('*')
     .in('device_id', ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio'])
@@ -69,7 +73,11 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     .lte('created_at', endIso)
     .order('created_at', { ascending: true });
 
-  const { data: mobileData } = await supabase
+  if (pcError) console.error('[ERROR] Supabase PC Data:', pcError.message);
+  else console.log(`[DEBUG] PC Records Found: ${pcData?.length || 0}`);
+  if (pcData && pcData.length > 0) console.log(`[DEBUG] First PC Record: ${JSON.stringify(pcData[0].created_at)}`);
+
+  const { data: mobileData, error: mobileError } = await supabase
     .from('metrics')
     .select('*')
     .eq('device_id', 'oppo-5-lite')
@@ -77,13 +85,19 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     .lte('created_at', endIso)
     .order('created_at', { ascending: true });
 
-  const { data: readingData } = await supabase
+  if (mobileError) console.error('[ERROR] Supabase Mobile Data:', mobileError.message);
+  else console.log(`[DEBUG] Mobile Records Found: ${mobileData?.length || 0}`);
+
+  const { data: readingData, error: readingError } = await supabase
     .from('metrics')
     .select('*')
     .eq('device_id', 'moon-reader')
     .gte('created_at', startIso)
     .lte('created_at', endIso)
     .order('created_at', { ascending: true });
+
+  if (readingError) console.error('[ERROR] Supabase Reading Data:', readingError.message);
+  else console.log(`[DEBUG] Reading Records Found: ${readingData?.length || 0}`);
 
   // --- PROCESSING: THE TIMELINE MASTER ---
   
