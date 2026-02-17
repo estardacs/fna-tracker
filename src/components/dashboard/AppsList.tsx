@@ -33,6 +33,7 @@ export default function AppsList({ title, apps, type }: AppsListProps) {
   }
 
   const maxVal = Math.max(...currentList.map(a => a.minutes), 1);
+  const totalMinutes = currentList.reduce((acc, curr) => acc + curr.minutes, 0);
 
   return (
     <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-800 h-[600px] flex flex-col">
@@ -60,8 +61,8 @@ export default function AppsList({ title, apps, type }: AppsListProps) {
             <TabButton 
               active={activeTab === 'PC Escritorio'} 
               onClick={() => setActiveTab('PC Escritorio')} 
-              icon={<PcCase className="w-3 h-3" />}
-              label="PC Escritorio"
+              icon={<Monitor className="w-3 h-3" />}
+              label="PC"
             />
           </div>
         )}
@@ -90,6 +91,11 @@ export default function AppsList({ title, apps, type }: AppsListProps) {
             </div>
           ))
         )}
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-gray-800 flex justify-between items-center text-sm">
+         <span className="text-gray-400">Total Activo</span>
+         <span className="text-white font-mono font-bold">{formatTime(totalMinutes)}</span>
       </div>
     </div>
   );

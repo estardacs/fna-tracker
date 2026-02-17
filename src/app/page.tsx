@@ -1,10 +1,12 @@
-import { getDailyStats } from '@/lib/data-processor';
+import { getDailyStats, getWeeklyStats } from '@/lib/data-processor';
 import ActivityChart from '@/components/dashboard/ActivityChart';
 import AppsList from '@/components/dashboard/AppsList';
 import RecentActivity from '@/components/dashboard/RecentActivity';
 import LocationCard from '@/components/dashboard/LocationCard';
 import DateNavigator from '@/components/dashboard/DateNavigator';
-import { BookOpen, Clock, Zap } from 'lucide-react';
+import WeeklyGrid from '@/components/dashboard/WeeklyGrid';
+import { BookOpen, Clock, MonitorSmartphone, Zap, Layers } from 'lucide-react';
+import RealtimeRefresher from '@/components/dashboard/RealtimeRefresher';
 
 import SantiagoClock from '@/components/dashboard/SantiagoClock';
 
@@ -18,6 +20,7 @@ export default async function Home({
   const params = await searchParams;
   const targetDate = params.date;
   const stats = await getDailyStats(targetDate);
+  const weeklyStats = await getWeeklyStats();
 
   // Formatear la lista de libros (Lista con bullets y tiempo real)
   const booksContent = stats.booksReadToday.length > 0 ? (
@@ -42,6 +45,7 @@ export default async function Home({
 
   return (
     <main className="min-h-screen bg-black text-white p-6 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
+      <RealtimeRefresher />
       
       {/* Header */}
       <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-4">
@@ -67,7 +71,13 @@ export default async function Home({
       </header>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+        <KpiCard 
+          title="Tiempo en Pantalla" 
+          value={formatDuration(stats.screenTimeMinutes)} 
+          icon={<MonitorSmartphone className="text-orange-400" />}
+          subtext={targetDate ? "Combinado" : "Total Hoy"}
+        />
         <KpiCard 
           title="Tiempo en PC" 
           value={formatDuration(stats.pcTotalMinutes)} 
@@ -104,9 +114,16 @@ export default async function Home({
           outsideMinutes={stats.locationStats.outsideMinutes}
           lastStatus={stats.lastPcStatus}
           lastMobileStatus={stats.lastMobileStatus}
+          breakdown={stats.locationBreakdown}
+          screenTimeTotal={stats.screenTimeMinutes}
         />
         <RecentActivity events={stats.recentEvents} />
       </div>
+
+      {/* Weekly Summary */}
+      <section className="mt-12 mb-6">
+        <WeeklyGrid days={weeklyStats} />
+      </section>
 
     </main>
   );

@@ -1,4 +1,8 @@
-import { Smartphone, Monitor, BookOpen, Clock, Wifi, Battery, MapPin } from 'lucide-react';
+'use client';
+
+import { Smartphone, Monitor, BookOpen, Clock, Wifi, Battery, MapPin, LayoutGrid } from 'lucide-react';
+import { useState } from 'react';
+import { clsx } from 'clsx';
 
 type Event = {
   id: number;
@@ -13,18 +17,48 @@ type Event = {
 };
 
 export default function RecentActivity({ events }: { events: Event[] }) {
+  const [filter, setFilter] = useState<'all' | 'pc' | 'mobile'>('all');
+
+  const filteredEvents = (filter === 'all' 
+    ? events 
+    : events.filter(e => e.type === filter)).slice(0, 20);
+
   return (
     <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-800 h-[600px] flex flex-col">
-      <div className="flex items-center gap-2 mb-6 shrink-0">
-        <Clock className="w-5 h-5 text-gray-400" />
-        <h3 className="text-gray-200 font-semibold">Log de Actividad</h3>
+      <div className="flex flex-col gap-4 mb-6 shrink-0">
+        <div className="flex items-center gap-2">
+          <Clock className="w-5 h-5 text-gray-400" />
+          <h3 className="text-gray-200 font-semibold">Log de Actividad</h3>
+        </div>
+
+        {/* Filtros */}
+        <div className="flex gap-1 bg-gray-950/50 p-1 rounded-lg border border-gray-800">
+          <FilterButton 
+            active={filter === 'all'} 
+            onClick={() => setFilter('all')} 
+            icon={<LayoutGrid className="w-3 h-3" />}
+            label="Todos"
+          />
+          <FilterButton 
+            active={filter === 'pc'} 
+            onClick={() => setFilter('pc')} 
+            icon={<Monitor className="w-3 h-3" />}
+            label="PC"
+          />
+          <FilterButton 
+            active={filter === 'mobile'} 
+            onClick={() => setFilter('mobile')} 
+            icon={<Smartphone className="w-3 h-3" />}
+            label="Móvil"
+          />
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0">
-        {events.length === 0 ? (
-          <p className="text-gray-500 text-sm italic">Esperando datos...</p>
+        {filteredEvents.length === 0 ? (
+          <p className="text-gray-500 text-sm italic">Sin datos para este filtro.</p>
         ) : (
-          events.map((e) => {
+          filteredEvents.map((e) => {
             const loc = e.locationType;
             return (
               <div key={e.id} className="flex gap-4 items-start group relative border-l-2 border-gray-800 pl-12 pb-8 last:pb-0">
@@ -96,4 +130,21 @@ function formatTime(isoString: string) {
     second: '2-digit',
     hour12: false
   }).format(date);
+}
+
+function FilterButton({ active, onClick, icon, label }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-[10px] font-medium transition-colors",
+        active 
+          ? "bg-gray-800 text-white shadow-sm" 
+          : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/50"
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
 }

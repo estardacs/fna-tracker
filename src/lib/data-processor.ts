@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { startOfDay, endOfDay, format, parseISO } from 'date-fns';
+import { startOfDay, endOfDay, format, parseISO, startOfWeek, addDays } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { unstable_noStore as noStore } from 'next/cache';
 
@@ -9,6 +10,13 @@ const supabase = createClient(
 );
 
 const TIMEZONE = 'America/Santiago';
+
+const formatWifiName = (ssid: string | undefined): string => {
+  if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet') return 'Desconocido';
+  if (ssid === 'GeCo') return 'Oficina';
+  if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'Casa';
+  return 'Desconocido';
+};
 
 export type DashboardStats = {
   pcTotalMinutes: number;
@@ -22,6 +30,8 @@ export type DashboardStats = {
     'Lenovo Yoga 7 Slim': { name: string; minutes: number }[];
     'PC Escritorio': { name: string; minutes: number }[];
   };
+
+  screenTimeMinutes: number;
   
   topMobileApps: { name: string; minutes: number }[];
   recentEvents: { 
@@ -38,7 +48,58 @@ export type DashboardStats = {
   locationStats: { officeMinutes: number; homeMinutes: number; outsideMinutes: number };
   lastPcStatus: { battery: number; wifi: string; lastSeen: string; isCharging: boolean } | null;
   lastMobileStatus: { wifi: string; lastSeen: string } | null;
+  
+  locationBreakdown: {
+    pc: { office: number; home: number; outside: number };
+    mobile: { office: number; home: number; outside: number };
+    screenTime: { office: number; home: number; outside: number };
+  };
+  simultaneousMinutes: number;
 };
+
+export type WeeklyDayStat = {
+  date: string;
+  dayName: string;
+  totalMinutes: number;
+  primaryDevice: 'pc' | 'mobile' | 'balanced';
+};
+
+export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
+  const days: WeeklyDayStat[] = [];
+  const now = new Date();
+  const zonedNow = toZonedTime(now, TIMEZONE);
+  
+  // Calculate start of current week (Monday)
+  const startOfCurrentWeek = startOfWeek(zonedNow, { weekStartsOn: 1 });
+  
+  // Iterate Mon (0) to Sun (6)
+  for (let i = 0; i < 7; i++) {
+    const targetDate = addDays(startOfCurrentWeek, i);
+    const dateStr = format(targetDate, 'yyyy-MM-dd');
+    
+    // Only fetch if date is today or past
+    let stats = { screenTimeMinutes: 0, pcTotalMinutes: 0, mobileTotalMinutes: 0 };
+    
+    if (targetDate <= zonedNow) {
+       stats = await getDailyStats(dateStr);
+    }
+
+    let primary: 'pc' | 'mobile' | 'balanced' = 'balanced';
+    if (stats.pcTotalMinutes > stats.mobileTotalMinutes * 1.2) primary = 'pc';
+    else if (stats.mobileTotalMinutes > stats.pcTotalMinutes * 1.2) primary = 'mobile';
+    
+    // If no data (future or empty), set to balanced but 0 mins
+    if (stats.screenTimeMinutes === 0) primary = 'balanced';
+
+    days.push({
+      date: dateStr,
+      dayName: format(targetDate, 'EEEE', { locale: es }), // 'lunes', 'martes'
+      totalMinutes: stats.screenTimeMinutes,
+      primaryDevice: primary
+    });
+  }
+  return days;
+}
 
 export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   noStore(); // Opt out of static rendering and data caching (Vercel fix)
@@ -105,6 +166,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   // Mapa de Slots de Minutos (Clave: "HH:mm", Valor: Nivel de Prioridad)
   // Niveles: 3 = PC Escritorio, 2 = Laptop, 1 = Móvil
   const minuteSlots = new Map<string, number>(); 
+  const allIntervals: { start: number, end: number }[] = [];
+ 
   
   // Helpers
   const markSlot = (isoTime: string, durationSec: number, level: number) => {
@@ -135,9 +198,10 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   };
 
   const getLocationType = (wifi: string | undefined): 'office' | 'home' | 'outside' => {
-    if (!wifi || wifi === 'Sin SSID' || wifi === 'Desconocido' || wifi === 'Ethernet') return 'outside';
+    if (!wifi) return 'outside';
     if (wifi === 'GeCo') return 'office';
-    return 'home';
+    if (wifi.includes('Depto 402') || wifi === 'Ethernet/Off') return 'home';
+    return 'outside';
   };
 
   // --- A. PC PROCESSING ---
@@ -152,6 +216,13 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   let rawOfficeMinutes = 0;
   let rawHomeMinutes = 0;
   let rawOutsideMinutes = 0;
+
+  const locBreakdown = {
+    pc: { office: 0, home: 0, outside: 0 },
+    mobile: { office: 0, home: 0, outside: 0 },
+    screenTime: { office: 0, home: 0, outside: 0 } // This will need complex dedup logic or approximation
+  };
+
   let lastPcStatus = null;
   
   let totalPcSeconds = 0;
@@ -169,7 +240,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       if (row.metadata?.battery_level !== undefined) {
         lastPcStatus = {
           battery: row.metadata.battery_level,
-          wifi: row.metadata.wifi_ssid || 'Desconocido',
+          wifi: formatWifiName(row.metadata.wifi_ssid),
           lastSeen: row.created_at,
           isCharging: row.metadata.is_charging || false
         };
@@ -206,22 +277,24 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         // Mark Timeline Slots (Crucial)
         if (totalSeconds > 0) {
           markSlot(row.created_at, totalSeconds, priority);
+          const sT = new Date(row.created_at).getTime();
+          allIntervals.push({ start: sT, end: sT + (totalSeconds * 1000) });
         }
 
         // Context (Raw Sum for Location bar proportions)
         const wifi = row.metadata?.wifi_ssid;
         const loc = getLocationType(wifi);
         const activeMin = totalSeconds / 60;
-        if (loc === 'office') rawOfficeMinutes += activeMin;
-        else if (loc === 'home') rawHomeMinutes += activeMin;
-        else rawOutsideMinutes += activeMin;
+        if (loc === 'office') { rawOfficeMinutes += activeMin; locBreakdown.pc.office += activeMin; }
+        else if (loc === 'home') { rawHomeMinutes += activeMin; locBreakdown.pc.home += activeMin; }
+        else { rawOutsideMinutes += activeMin; locBreakdown.pc.outside += activeMin; }
 
         // Logs
         if (details.length > 0) {
           unifiedEvents.push({
             id: row.id, time: row.created_at, device: deviceName + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : ''),
             detail: details.join(', '), duration: '1m', type: 'pc',
-            battery: row.metadata?.battery_level, wifi: wifi, locationType: loc
+            battery: row.metadata?.battery_level, wifi: formatWifiName(wifi), locationType: loc
           });
         }
       } 
@@ -234,13 +307,15 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
 
         // Mark Timeline
         markSlot(row.created_at, minutes * 60, priority);
+        const sT = new Date(row.created_at).getTime();
+        allIntervals.push({ start: sT, end: sT + (minutes * 60 * 1000) });
 
         // Context
         const wifi = row.metadata?.wifi_ssid;
         const loc = getLocationType(wifi);
-        if (loc === 'office') rawOfficeMinutes += minutes;
-        else if (loc === 'home') rawHomeMinutes += minutes;
-        else rawOutsideMinutes += minutes;
+        if (loc === 'office') { rawOfficeMinutes += minutes; locBreakdown.pc.office += minutes; }
+        else if (loc === 'home') { rawHomeMinutes += minutes; locBreakdown.pc.home += minutes; }
+        else { rawOutsideMinutes += minutes; locBreakdown.pc.outside += minutes; }
 
         // Apps History
         let appName = row.metadata?.process_name;
@@ -288,7 +363,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   if (mobileData && mobileData.length > 0) {
     for (let i = 0; i < mobileData.length; i++) {
       const currentEvent = mobileData[i];
-      lastMobileStatus = { wifi: currentEvent.metadata?.wifi_ssid || 'Desconocido', lastSeen: currentEvent.created_at };
+      lastMobileStatus = { wifi: formatWifiName(currentEvent.metadata?.wifi_ssid), lastSeen: currentEvent.created_at };
       const nextEvent = mobileData[i + 1];
       
       let durationSec = 0;
@@ -316,14 +391,17 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
          
          // Accumulate Exact Time (Only if meaningful)
          totalMobileSeconds += durationSec;
+         
+         const sT = new Date(currentEvent.created_at).getTime();
+         allIntervals.push({ start: sT, end: sT + (durationSec * 1000) });
       }
 
       // Context logic for mobile (Just accumulation for bar, not deduplicated yet)
       const wifi = currentEvent.metadata?.wifi_ssid || '';
       const loc = getLocationType(wifi);
-      if (loc === 'office') rawOfficeMinutes += durationMin;
-      else if (loc === 'home') rawHomeMinutes += durationMin;
-      else if (durationMin > 0) rawOutsideMinutes += durationMin;
+      if (loc === 'office') { rawOfficeMinutes += durationMin; locBreakdown.mobile.office += durationMin; }
+      else if (loc === 'home') { rawHomeMinutes += durationMin; locBreakdown.mobile.home += durationMin; }
+      else if (durationMin > 0) { rawOutsideMinutes += durationMin; locBreakdown.mobile.outside += durationMin; }
 
       // Apps History
       if (appName !== 'Lanzador del sistema' && appName !== 'Pantalla Apagada') {
@@ -371,7 +449,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       id: new Date(timeKey).getTime(), time: timeKey, 
       device: 'Oppo 5 Lite' + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : ''),
       detail: data.details.join(', '), duration: formatDurationSec(data.totalSec), 
-      type: 'mobile', wifi: data.wifi, locationType: loc
+      type: 'mobile', wifi: formatWifiName(data.wifi), locationType: loc
     });
   });
 
@@ -381,7 +459,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   let dedupMobileMinutes = 0;
   const timelineData = new Map<string, { pc: number, mobile: number }>();
 
-  // Init chart
+  // Init chart with hourly intervals
   for (let i = 0; i < 24; i++) {
     timelineData.set(i.toString().padStart(2, '0'), { pc: 0, mobile: 0 });
   }
@@ -416,9 +494,44 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   // Helper Array
   const toArray = (map: Map<string, number>) => Array.from(map.entries()).map(([name, minutes]) => ({ name, minutes })).sort((a, b) => b.minutes - a.minutes);
 
+  // --- CALC EXACT DEDUP SCREEN TIME ---
+  allIntervals.sort((a, b) => a.start - b.start);
+  let exactDedupMs = 0;
+  let simultaneousMs = 0;
+
+  // Simple scan for simultaneity: we need separate lists to compare efficiently, 
+  // but since we only have `allIntervals` mixed, we can estimate it:
+  // Simultaneous = (PC Total + Mobile Total) - Dedup Total
+  // This holds true for 2 sets union: |A U B| = |A| + |B| - |A n B|
+  // So |A n B| = |A| + |B| - |A U B|
+  
+  if (allIntervals.length > 0) {
+    let current = allIntervals[0];
+    for (let i = 1; i < allIntervals.length; i++) {
+      const next = allIntervals[i];
+      if (next.start < current.end) {
+        current.end = Math.max(current.end, next.end);
+      } else {
+        exactDedupMs += (current.end - current.start);
+        current = next;
+      }
+    }
+    exactDedupMs += (current.end - current.start);
+  }
+
+  // Exact Calculation via Set Theory
+  // TotalPCSeconds and TotalMobileSeconds are raw sums of usage (non-overlapping within themselves usually, 
+  // but our logic above `totalPcSeconds += totalSeconds` assumes non-overlapping batches).
+  // If `metrics` are granular and non-overlapping per device, this works.
+  
+  simultaneousMs = ((totalPcSeconds + totalMobileSeconds) * 1000) - exactDedupMs;
+  if (simultaneousMs < 0) simultaneousMs = 0; // Floating point errors
+
   return {
     pcTotalMinutes: totalPcSeconds / 60, // EXACT SUM (not deduplicated slots)
     mobileTotalMinutes: totalMobileSeconds / 60, // EXACT SUM (not deduplicated slots)
+    screenTimeMinutes: exactDedupMs / 1000 / 60, // EXACT DEDUPLICATED SUM
+    simultaneousMinutes: simultaneousMs / 1000 / 60,
     readingMinutes: totalReadingMinutes, // Raw reading time (usually accurate as is)
     
     booksReadToday: Array.from(booksFinalMap.values()).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
@@ -434,12 +547,22 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     },
     
     topMobileApps: toArray(mobileAppsMap),
-    recentEvents: unifiedEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 20),
+    recentEvents: unifiedEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 100),
     
     // Note: Location Stats are still raw sum because deduping location context is complex without separating PC/Mobile slots
     // For now, raw sum is a good "presence" indicator.
     locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes },
     
+    locationBreakdown: {
+      pc: locBreakdown.pc,
+      mobile: locBreakdown.mobile,
+      screenTime: { 
+        office: locBreakdown.pc.office + locBreakdown.mobile.office, 
+        home: locBreakdown.pc.home + locBreakdown.mobile.home, 
+        outside: locBreakdown.pc.outside + locBreakdown.mobile.outside 
+      }
+    },
+
     lastPcStatus,
     lastMobileStatus
   };
