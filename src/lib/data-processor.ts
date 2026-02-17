@@ -153,6 +153,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   let rawHomeMinutes = 0;
   let rawOutsideMinutes = 0;
   let lastPcStatus = null;
+  
+  let totalPcSeconds = 0;
 
   if (pcData && pcData.length > 0) {
     let currentApp = pcData[0].metadata?.process_name || 'Sistema';
@@ -198,6 +200,9 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
           }
         });
 
+        // Accumulate Exact Time
+        totalPcSeconds += totalSeconds;
+
         // Mark Timeline Slots (Crucial)
         if (totalSeconds > 0) {
           markSlot(row.created_at, totalSeconds, priority);
@@ -224,6 +229,9 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         // OLD FORMAT
         const minutes = Number(row.value) || 1; 
         
+        // Accumulate Exact Time (Estimate for old format)
+        totalPcSeconds += minutes * 60;
+
         // Mark Timeline
         markSlot(row.created_at, minutes * 60, priority);
 
@@ -274,6 +282,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const bookTimeMap = new Map<string, number>();
   const mobileLogBuffer = new Map<string, { details: string[], wifi: string, totalSec: number }>(); 
   let lastMobileStatus = null;
+  
+  let totalMobileSeconds = 0;
 
   if (mobileData && mobileData.length > 0) {
     for (let i = 0; i < mobileData.length; i++) {
@@ -303,6 +313,9 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       // Only mark if meaningful activity (not Launcher)
       if (appName !== 'Lanzador del sistema' && appName !== 'Pantalla Apagada' && durationSec > 5) {
          markSlot(currentEvent.created_at, durationSec, 1);
+         
+         // Accumulate Exact Time (Only if meaningful)
+         totalMobileSeconds += durationSec;
       }
 
       // Context logic for mobile (Just accumulation for bar, not deduplicated yet)
@@ -404,8 +417,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const toArray = (map: Map<string, number>) => Array.from(map.entries()).map(([name, minutes]) => ({ name, minutes })).sort((a, b) => b.minutes - a.minutes);
 
   return {
-    pcTotalMinutes: dedupPcMinutes, // DEDUPLICATED
-    mobileTotalMinutes: dedupMobileMinutes, // DEDUPLICATED
+    pcTotalMinutes: totalPcSeconds / 60, // EXACT SUM (not deduplicated slots)
+    mobileTotalMinutes: totalMobileSeconds / 60, // EXACT SUM (not deduplicated slots)
     readingMinutes: totalReadingMinutes, // Raw reading time (usually accurate as is)
     
     booksReadToday: Array.from(booksFinalMap.values()).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
