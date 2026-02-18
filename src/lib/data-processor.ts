@@ -11,7 +11,7 @@ const supabase = createClient(
 
 const TIMEZONE = 'America/Santiago';
 
-const IGNORED_APPS = ['Lanzador del sistema', 'Pantalla Apagada', 'Reloj', 'Clock'];
+const IGNORED_APPS = ['Lanzador del sistema', 'Pantalla Apagada', 'Reloj', 'Clock', 'Barra lateral inteligente'];
 
 const formatWifiName = (ssid: string | undefined): string => {
   if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet') return 'Desconocido';
