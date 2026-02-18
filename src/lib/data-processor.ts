@@ -20,6 +20,22 @@ const formatWifiName = (ssid: string | undefined): string => {
   return 'Desconocido';
 };
 
+const cleanBookTitle = (title: string | undefined): string => {
+  if (!title) return 'Desconocido';
+  
+  let clean = title.replace(/\.(epub|pdf|mobi|azw3)$/i, ''); // Remove extensions
+  
+  // Specific fix for Shadow Slave
+  if (clean.toLowerCase().includes('shadow-slave') || clean.toLowerCase().includes('shadow slave')) {
+    return 'Shadow Slave';
+  }
+
+  // General cleaning: replace hyphens/underscores with spaces and capitalize
+  clean = clean.replace(/[-_]/g, ' ').trim();
+  
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+};
+
 export type DashboardStats = {
   pcTotalMinutes: number;
   mobileTotalMinutes: number;
@@ -35,6 +51,9 @@ export type DashboardStats = {
 
   screenTimeMinutes: number;
   
+  gamingMinutes: number;
+  gamesPlayedToday: { title: string; timeSpentSec: number }[];
+
   topMobileApps: { name: string; minutes: number }[];
   recentEvents: { 
     id: number; 
@@ -228,6 +247,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   let lastPcStatus = null;
   
   let totalPcSeconds = 0;
+  let totalGamingSeconds = 0;
+  const gamesMap = new Map<string, number>();
 
   if (pcData && pcData.length > 0) {
     let currentApp = pcData[0].metadata?.process_name || 'Sistema';
@@ -263,6 +284,21 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
             totalSeconds += sec;
             let cleanApp = app === 'System/Unknown' ? 'Sistema' : app;
             
+            // Gaming Detection
+            let isGame = false;
+            let gameTitle = '';
+            
+            if (cleanApp === 'League of Legends') { 
+               isGame = true; gameTitle = 'League of Legends';
+            } else if (cleanApp === 'Endfield') {
+               isGame = true; gameTitle = 'Arknights: Endfield';
+            }
+
+            if (isGame) {
+              totalGamingSeconds += sec;
+              gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + sec);
+            }
+
             // Apps History (Full)
             const min = sec / 60;
             pcAppsMapAll.set(cleanApp, (pcAppsMapAll.get(cleanApp) || 0) + min);
@@ -308,6 +344,17 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         
         // Accumulate Exact Time (Estimate for old format)
         totalPcSeconds += minutes * 60;
+
+        // Gaming Detection (Old Format)
+        let isGame = false;
+        let gameTitle = '';
+        if (row.metadata?.process_name === 'League of Legends') { isGame = true; gameTitle = 'League of Legends'; }
+        else if (row.metadata?.process_name === 'Endfield') { isGame = true; gameTitle = 'Arknights: Endfield'; }
+        
+        if (isGame) {
+           totalGamingSeconds += minutes * 60;
+           gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + (minutes * 60));
+        }
 
         // Mark Timeline
         markSlot(row.created_at, minutes * 60, priority);
@@ -436,7 +483,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
             const upperBound = sessionEnd + (20 * 60 * 1000); // 20 mins after end
 
             if (readTime >= lowerBound && readTime <= upperBound) {
-              activeBook = read.metadata?.book_title?.replace(/\.(epub|pdf|mobi)$/i, '').trim() || 'Desconocido';
+              activeBook = cleanBookTitle(read.metadata?.book_title);
               break; 
             }
           }
@@ -484,7 +531,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   // Reading Books
   const booksFinalMap = new Map<string, { title: string; percent: number; timeSpentSec: number }>();
   readingData?.forEach((row) => {
-    const title = row.metadata?.book_title?.replace(/\.(epub|pdf|mobi)$/i, '').trim() || 'Desconocido';
+    const title = cleanBookTitle(row.metadata?.book_title);
     if (!booksFinalMap.has(title)) {
       booksFinalMap.set(title, { title, percent: row.value, timeSpentSec: 0 });
       unifiedEvents.push({ id: row.id, time: row.created_at, device: 'Cloud', detail: `Progreso: ${title} (${row.value}%)`, duration: '-', type: 'reading' });
@@ -538,6 +585,9 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     simultaneousMinutes: simultaneousMs / 1000 / 60,
     readingMinutes: totalReadingMinutes, // Raw reading time (usually accurate as is)
     
+    gamingMinutes: totalGamingSeconds / 60,
+    gamesPlayedToday: Array.from(gamesMap.entries()).map(([title, sec]) => ({ title, timeSpentSec: sec })).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
+
     booksReadToday: Array.from(booksFinalMap.values()).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
     
     activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({

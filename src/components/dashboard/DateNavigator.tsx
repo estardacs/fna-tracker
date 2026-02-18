@@ -31,7 +31,7 @@ export default function DateNavigator() {
     <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg border border-gray-800">
       <button 
         onClick={() => navigate('prev')}
-        className="p-2 hover:bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors"
+        className="p-2 hover:bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors cursor-pointer"
         title="Día anterior"
       >
         <ChevronLeft className="w-4 h-4" />
@@ -39,7 +39,7 @@ export default function DateNavigator() {
 
       <button 
         onClick={goToToday}
-        className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-800 rounded-md transition-colors min-w-[140px] justify-center"
+        className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-800 rounded-md transition-colors min-w-[140px] justify-center cursor-pointer"
         title="Volver a Hoy"
       >
         <Calendar className="w-3.5 h-3.5 text-blue-400" />
@@ -51,7 +51,7 @@ export default function DateNavigator() {
       <button 
         onClick={() => navigate('next')}
         disabled={isToday} // No viajar al futuro
-        className={`p-2 rounded-md transition-colors ${
+        className={`p-2 rounded-md transition-colors cursor-pointer ${
           isToday 
             ? 'text-gray-700 cursor-not-allowed' 
             : 'hover:bg-gray-800 text-gray-400 hover:text-white'

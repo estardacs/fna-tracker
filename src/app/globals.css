@@ -52,3 +52,10 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background-color: #374151; /* gray-700: un poco más claro al interactuar */
 }
+
+/* --- RECHARTS FIX --- */
+/* Elimina el borde azul/blanco al hacer click en el gráfico */
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none !important;
+}

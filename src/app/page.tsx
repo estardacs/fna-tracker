@@ -5,7 +5,7 @@ import RecentActivity from '@/components/dashboard/RecentActivity';
 import LocationCard from '@/components/dashboard/LocationCard';
 import DateNavigator from '@/components/dashboard/DateNavigator';
 import WeeklyGrid from '@/components/dashboard/WeeklyGrid';
-import { BookOpen, Clock, MonitorSmartphone, Zap, Layers } from 'lucide-react';
+import { BookOpen, Clock, MonitorSmartphone, Zap, Layers, Gamepad2 } from 'lucide-react';
 import RealtimeRefresher from '@/components/dashboard/RealtimeRefresher';
 
 import SantiagoClock from '@/components/dashboard/SantiagoClock';
@@ -43,6 +43,23 @@ export default async function Home({
     <p className="text-gray-500 text-sm mt-2 italic">Sin lectura registrada</p>
   );
 
+  const gamesContent = stats.gamesPlayedToday.length > 0 ? (
+    <ul className="list-disc list-inside space-y-3 mt-3 text-gray-300">
+      {stats.gamesPlayedToday.map((g, idx) => (
+        <li key={idx} className="text-xs md:text-sm leading-relaxed border-b border-gray-800/50 pb-2 last:border-0">
+          <span className="font-medium text-gray-100">{g.title}</span>
+          <div className="flex gap-3 mt-1 ml-5 text-[10px] md:text-xs text-gray-500 font-mono">
+            <span className="bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded">
+              {formatDuration(g.timeSpentSec / 60)} 
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="text-gray-500 text-sm mt-2 italic">Sin juegos hoy</p>
+  );
+
   return (
     <main className="min-h-screen bg-black text-white p-6 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
       <RealtimeRefresher />
@@ -71,7 +88,7 @@ export default async function Home({
       </header>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
         <KpiCard 
           title="Tiempo en Pantalla" 
           value={formatDuration(stats.screenTimeMinutes)} 
@@ -95,6 +112,13 @@ export default async function Home({
           value={formatDuration(stats.readingMinutes)} 
           icon={<BookOpen className="text-purple-400" />}
           subtext={booksContent}
+          isLongText
+        />
+        <KpiCard 
+          title="Juegos" 
+          value={formatDuration(stats.gamingMinutes)} 
+          icon={<Gamepad2 className="text-indigo-400" />}
+          subtext={gamesContent}
           isLongText
         />
       </div>

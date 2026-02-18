@@ -137,7 +137,7 @@ function FilterButton({ active, onClick, icon, label }: any) {
     <button
       onClick={onClick}
       className={clsx(
-        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-[10px] font-medium transition-colors",
+        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-[10px] font-medium transition-colors cursor-pointer",
         active 
           ? "bg-gray-800 text-white shadow-sm" 
           : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/50"

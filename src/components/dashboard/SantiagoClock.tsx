@@ -26,7 +26,7 @@ export default function SantiagoClock() {
   if (!time) return null;
 
   return (
-    <div className="flex items-center gap-2 text-xs font-mono text-gray-500 bg-gray-900/30 px-2 py-1 rounded border border-gray-800/50">
+    <div className="flex items-center gap-2 text-xs font-mono text-gray-500 bg-gray-900/30 px-2 py-1 rounded border border-gray-800/50 cursor-default">
       <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
       CLST: <span className="text-gray-300 font-semibold">{time}</span>
     </div>
