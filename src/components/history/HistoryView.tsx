@@ -212,7 +212,7 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
                 <Tooltip 
                     contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', color: '#f3f4f6', fontSize: '12px' }}
                     labelFormatter={(val) => format(parseISO(val), "d MMM yyyy", { locale: es })}
-                    formatter={(val: number) => [formatMinutes(val), 'Tiempo']}
+                    formatter={(val: any) => [formatMinutes(Number(val) || 0), 'Tiempo']}
                 />
                 <Area type="monotone" dataKey="totalScreenTime" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
             </AreaChart>
