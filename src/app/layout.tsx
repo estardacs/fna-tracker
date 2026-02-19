@@ -15,8 +15,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Fña Tracker",
   description: "Personal Life Dashboard",
+  manifest: "/manifest.json",
+  themeColor: "#000000",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Fña Tracker",
+  },
   icons: {
     icon: "/sand-clock.svg",
+    apple: "/sand-clock.svg",
   },
 };
 

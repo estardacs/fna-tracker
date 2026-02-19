@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@^2.39.3",
+    "date-fns": "npm:date-fns@^3.3.1",
+    "date-fns/locale": "npm:date-fns@^3.3.1/locale",
+    "date-fns-tz": "npm:date-fns-tz@^2.0.0"
+  }
+}

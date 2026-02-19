@@ -36,11 +36,11 @@ export default function AppsList({ title, apps, type }: AppsListProps) {
   const totalMinutes = currentList.reduce((acc, curr) => acc + curr.minutes, 0);
 
   return (
-    <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-800 h-[600px] flex flex-col">
-      <div className="flex flex-col gap-4 mb-4 shrink-0">
+    <div className="bg-gray-900/50 p-4 md:p-6 rounded-xl border border-gray-800 h-[450px] md:h-[600px] flex flex-col">
+      <div className="flex flex-col gap-3 md:gap-4 mb-4 shrink-0">
         <div className="flex items-center gap-2">
-          <Icon className={clsx("w-5 h-5", colorClass)} />
-          <h3 className="text-gray-200 font-semibold">{title}</h3>
+          <Icon className={clsx("w-4 h-4 md:w-5 md:h-5", colorClass)} />
+          <h3 className="text-gray-200 text-sm md:text-base font-semibold">{title}</h3>
         </div>
 
         {/* Tabs solo para PC */}

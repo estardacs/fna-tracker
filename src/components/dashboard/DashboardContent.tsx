@@ -19,6 +19,26 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
     getWeeklyStats()
   ]);
 
+  // Empty State
+  if (stats.screenTimeMinutes === 0 && stats.pcTotalMinutes === 0 && stats.mobileTotalMinutes === 0) {
+    return (
+      <FadeIn>
+        <div className="flex flex-col items-center justify-center py-24 bg-gray-900/30 border border-dashed border-gray-800 rounded-xl text-center mb-12">
+            <div className="w-20 h-20 bg-gray-800/50 rounded-full flex items-center justify-center mb-6 text-4xl shadow-inner">
+                💤
+            </div>
+            <h3 className="text-xl font-medium text-gray-300 mb-2">Sin actividad registrada</h3>
+            <p className="text-sm text-gray-500 max-w-md mx-auto">
+                No se encontraron datos de PC, móvil o lectura para esta fecha.
+            </p>
+        </div>
+        <section className="mt-12 mb-6">
+            <WeeklyGrid days={weeklyStats} />
+        </section>
+      </FadeIn>
+    );
+  }
+
   // Formatear la lista de libros (Lista con bullets y tiempo real)
   const booksContent = stats.booksReadToday.length > 0 ? (
     <ul className="list-disc list-inside space-y-3 mt-3 text-gray-300">
@@ -60,48 +80,48 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
   return (
     <FadeIn>
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-6 mb-8 md:mb-12">
         <KpiCard 
-          title="Tiempo en Pantalla" 
+          title="Tiempo Pantalla" 
           value={formatDuration(stats.screenTimeMinutes)} 
-          icon={<MonitorSmartphone className="text-orange-400" />}
+          icon={<MonitorSmartphone className="text-orange-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={date ? "Combinado" : "Total Hoy"}
         />
         <KpiCard 
           title="Tiempo en PC" 
           value={formatDuration(stats.pcTotalMinutes)} 
-          icon={<Zap className="text-blue-400" />}
+          icon={<Zap className="text-blue-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={date ? "En esa fecha" : "Hoy"}
         />
         <KpiCard 
           title="Tiempo en Móvil" 
           value={formatDuration(stats.mobileTotalMinutes)} 
-          icon={<Clock className="text-emerald-400" />}
+          icon={<Clock className="text-emerald-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={date ? "En esa fecha" : "Hoy"}
         />
         <KpiCard 
           title="Lectura" 
           value={formatDuration(stats.readingMinutes)} 
-          icon={<BookOpen className="text-purple-400" />}
+          icon={<BookOpen className="text-purple-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={booksContent}
           isLongText
         />
         <KpiCard 
           title="Juegos" 
           value={formatDuration(stats.gamingMinutes)} 
-          icon={<Gamepad2 className="text-indigo-400" />}
+          icon={<Gamepad2 className="text-indigo-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={gamesContent}
           isLongText
         />
       </div>
 
       {/* Main Chart */}
-      <section className="mb-12">
+      <section className="mb-8 md:mb-12">
         <ActivityChart data={stats.activityTimeline} />
       </section>
 
       {/* Detailed Lists & Logs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <AppsList title="Historial PC" apps={stats.pcAppHistory} type="pc" />
         <AppsList title="Historial Móvil" apps={stats.topMobileApps} type="mobile" />
         <LocationCard 
