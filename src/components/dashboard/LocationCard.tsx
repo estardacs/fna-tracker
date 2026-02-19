@@ -159,7 +159,6 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
       </div>
     </div>
   );
-  );
 }
 
 function LegendItem({ label, value, color, total }: any) {
