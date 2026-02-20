@@ -177,11 +177,12 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
       </div>
 
       {/* Totals Summary Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 md:gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4 mb-8">
         <SummaryStat label="Tiempo Total" value={formatMinutes(totals.screenTime)} colorClass="text-white" />
         <SummaryStat label="PC" value={formatMinutes(totals.pc)} colorClass="text-blue-400" />
         <SummaryStat label="Móvil" value={formatMinutes(totals.mobile)} colorClass="text-purple-400" />
         <SummaryStat label="Lectura" value={formatMinutes(totals.reading)} colorClass="text-green-400" />
+        <SummaryStat label="Juego" value={formatMinutes(totals.gaming)} colorClass="text-indigo-400" />
         <SummaryStat label="En Casa" value={formatMinutes(totals.home)} colorClass="text-emerald-400" />
         <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
         <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
