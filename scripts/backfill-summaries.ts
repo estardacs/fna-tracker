@@ -73,7 +73,7 @@ async function updatePeriodSummary(
 }
 
 async function runBackfill() {
-  const datesToProcess = ['2026-02-18'];
+  const datesToProcess = ['2026-02-19'];
 
   console.log("--- Starting Backfill Process (Single Day) ---");
 
@@ -111,7 +111,7 @@ async function runBackfill() {
   }
 
   console.log("--- Updating Aggregate Summaries ---");
-  const lastDate = new Date('2026-02-18');
+  const lastDate = new Date('2026-02-19');
   
   const weekStart = startOfWeek(lastDate, { weekStartsOn: 1 });
   await updatePeriodSummary('weekly', format(weekStart, 'yyyy-MM-dd'), format(addDays(weekStart, 6), 'yyyy-MM-dd'), 'week_start_date', format(weekStart, 'yyyy-MM-dd'));

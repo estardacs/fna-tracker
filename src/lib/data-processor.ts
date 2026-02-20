@@ -206,6 +206,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
             let isGame = false, gameTitle = '';
             if (cleanApp === 'League of Legends') { isGame = true; gameTitle = 'League of Legends'; }
             else if (cleanApp === 'Endfield') { isGame = true; gameTitle = 'Arknights: Endfield'; }
+            else if (cleanApp === 'GenshinImpact' || cleanApp === 'Genshin Impact') { isGame = true; gameTitle = 'Genshin Impact'; }
             if (isGame) { totalGamingSeconds += sec; gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + sec); }
             const min = sec / 60;
             pcAppsMapAll.set(cleanApp, (pcAppsMapAll.get(cleanApp) || 0) + min);
@@ -236,6 +237,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         let isGame = false, gameTitle = '';
         if (row.metadata?.process_name === 'League of Legends') { isGame = true; gameTitle = 'League of Legends'; }
         else if (row.metadata?.process_name === 'Endfield') { isGame = true; gameTitle = 'Arknights: Endfield'; }
+        else if (row.metadata?.process_name === 'GenshinImpact' || row.metadata?.process_name === 'Genshin Impact') { isGame = true; gameTitle = 'Genshin Impact'; }
         if (isGame) { totalGamingSeconds += minutes * 60; gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + (minutes * 60)); }
         markSlot(row.created_at, minutes * 60, priority);
         const sT = new Date(row.created_at).getTime();

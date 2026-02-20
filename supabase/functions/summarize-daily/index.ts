@@ -111,6 +111,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
         let isGame = false, gameTitle = '';
         if (cleanApp === 'League of Legends') { isGame = true; gameTitle = 'League of Legends'; }
         else if (cleanApp === 'Endfield') { isGame = true; gameTitle = 'Arknights: Endfield'; }
+        else if (cleanApp === 'GenshinImpact' || cleanApp === 'Genshin Impact') { isGame = true; gameTitle = 'Genshin Impact'; }
 
         if (isGame) {
           totalGamingSeconds += sec;
