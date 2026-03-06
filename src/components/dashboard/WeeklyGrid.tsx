@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Monitor, Smartphone, Scale } from 'lucide-react';
 
 type DayStat = {
@@ -16,11 +17,8 @@ export default function WeeklyGrid({ days }: { days: DayStat[] }) {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {days.map((day) => {
           const isEmpty = day.totalMinutes === 0;
-          return (
-            <div 
-              key={day.date} 
-              className={`bg-gray-900/50 p-4 rounded-xl border border-gray-800 flex flex-col items-center justify-center gap-2 transition-colors ${isEmpty ? 'opacity-50' : 'hover:border-gray-700'}`}
-            >
+          const cardContent = (
+            <>
               <span className="text-gray-500 text-xs font-medium uppercase">{day.dayName}</span>
               <span className="text-2xl font-bold text-white tracking-tight">
                 {isEmpty ? '-' : formatHours(day.totalMinutes)}
@@ -34,7 +32,19 @@ export default function WeeklyGrid({ days }: { days: DayStat[] }) {
                   </>
                 )}
               </div>
+            </>
+          );
+
+          const className = `bg-gray-900/50 p-4 rounded-xl border border-gray-800 flex flex-col items-center justify-center gap-2 transition-colors ${isEmpty ? 'opacity-50' : 'hover:border-gray-700 hover:scale-[1.02] cursor-pointer'}`;
+
+          return isEmpty ? (
+            <div key={day.date} className={className}>
+              {cardContent}
             </div>
+          ) : (
+            <Link key={day.date} href={`/?date=${day.date}`} className={className}>
+              {cardContent}
+            </Link>
           );
         })}
       </div>

@@ -1,4 +1,4 @@
-import { getDailyStats, getWeeklyStats } from '@/lib/data-processor';
+import { getDailyStats, getWeeklyStats, getReadingStreak } from '@/lib/data-processor';
 import ActivityChart from '@/components/dashboard/ActivityChart';
 import AppsList from '@/components/dashboard/AppsList';
 import RecentActivity from '@/components/dashboard/RecentActivity';
@@ -18,6 +18,14 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
     getDailyStats(date),
     getWeeklyStats()
   ]);
+
+  const todayStr = weeklyStats.find(d => d.totalMinutes > 0)?.date;
+  const pastDays = weeklyStats.filter(d => d.date !== (date ?? todayStr) && d.totalMinutes > 0);
+  const avgScreenTime = pastDays.length > 0
+    ? pastDays.reduce((s, d) => s + d.totalMinutes, 0) / pastDays.length
+    : null;
+
+  const readingStreak = await getReadingStreak(stats.readingMinutes > 0);
 
   // Empty State
   if (stats.screenTimeMinutes === 0 && stats.pcTotalMinutes === 0 && stats.mobileTotalMinutes === 0) {
@@ -40,6 +48,8 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
   }
 
   // Formatear la lista de libros (Lista con bullets y tiempo real)
+  const streakText = readingStreak > 1 ? `Racha: ${readingStreak} días seguidos` : null;
+
   const booksContent = stats.booksReadToday.length > 0 ? (
     <ul className="list-disc list-inside space-y-3 mt-3 text-gray-300">
       {stats.booksReadToday.map((b, idx) => (
@@ -58,6 +68,15 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
     </ul>
   ) : (
     <p className="text-gray-500 text-sm mt-2 italic">Sin lectura registrada</p>
+  );
+
+  const booksSubtext = (
+    <>
+      {streakText && (
+        <p className="text-amber-400/80 text-xs font-medium mb-2">{streakText}</p>
+      )}
+      {booksContent}
+    </>
   );
 
   const gamesContent = stats.gamesPlayedToday.length > 0 ? (
@@ -81,11 +100,13 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
     <FadeIn>
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-6 mb-8 md:mb-12">
-        <KpiCard 
-          title="Tiempo Pantalla" 
-          value={formatDuration(stats.screenTimeMinutes)} 
+        <KpiCard
+          title="Tiempo Pantalla"
+          value={formatDuration(stats.screenTimeMinutes)}
           icon={<MonitorSmartphone className="text-orange-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={date ? "Combinado" : "Total Hoy"}
+          avgMinutes={avgScreenTime ?? undefined}
+          currentMinutes={stats.screenTimeMinutes}
         />
         <KpiCard 
           title="Tiempo en PC" 
@@ -99,11 +120,11 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
           icon={<Clock className="text-emerald-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={date ? "En esa fecha" : "Hoy"}
         />
-        <KpiCard 
-          title="Lectura" 
-          value={formatDuration(stats.readingMinutes)} 
+        <KpiCard
+          title="Lectura"
+          value={formatDuration(stats.readingMinutes)}
           icon={<BookOpen className="text-purple-400 w-4 h-4 md:w-6 md:h-6" />}
-          subtext={booksContent}
+          subtext={booksSubtext}
           isLongText
         />
         <KpiCard 
@@ -147,11 +168,6 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
 function formatDuration(totalMinutes: number) {
   const h = Math.floor(totalMinutes / 60);
   const m = Math.floor(totalMinutes % 60);
-  const s = Math.round((totalMinutes % 1) * 60);
-  
-  const hh = h.toString().padStart(2, '0');
-  const mm = m.toString().padStart(2, '0');
-  const ss = s.toString().padStart(2, '0');
-  
-  return `${hh}:${mm}:${ss}`;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
 }

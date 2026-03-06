@@ -13,7 +13,7 @@ export default function RealtimeRefresher() {
     // sin recargar toda la página (mantiene el scroll y estado visual).
     const intervalId = setInterval(() => {
       router.refresh();
-    }, 5 * 1000); // 5 segundos
+    }, 30 * 1000); // 30 segundos
 
     return () => {
       clearInterval(intervalId);
