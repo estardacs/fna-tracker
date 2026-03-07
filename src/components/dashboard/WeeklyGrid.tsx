@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { Monitor, Smartphone, Scale } from 'lucide-react';
+import { Monitor, Smartphone, Scale, Moon } from 'lucide-react';
 
 type DayStat = {
   date: string;
   dayName: string;
   totalMinutes: number;
   primaryDevice: 'pc' | 'mobile' | 'balanced';
+  sleepMinutes: number;
 };
 
 export default function WeeklyGrid({ days }: { days: DayStat[] }) {
@@ -32,6 +33,12 @@ export default function WeeklyGrid({ days }: { days: DayStat[] }) {
                   </>
                 )}
               </div>
+              {day.sleepMinutes > 0 && (
+                <div className="flex items-center gap-1 mt-1">
+                  <Moon className="w-3 h-3 text-indigo-400" />
+                  <span className="text-[10px] text-indigo-400 font-mono">{formatSleepHours(day.sleepMinutes)}</span>
+                </div>
+              )}
             </>
           );
 
@@ -56,4 +63,10 @@ function formatHours(minutes: number) {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return `${h}h ${m}m`;
+}
+
+function formatSleepHours(minutes: number) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h${m}m` : `${h}h`;
 }

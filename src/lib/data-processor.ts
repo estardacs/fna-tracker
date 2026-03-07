@@ -71,6 +71,7 @@ export type WeeklyDayStat = {
   dayName: string;
   totalMinutes: number;
   primaryDevice: 'pc' | 'mobile' | 'balanced';
+  sleepMinutes: number;
 };
 
 export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
@@ -87,11 +88,24 @@ export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
 
   // Fetch past days from daily_summary in one query (more reliable than raw metrics)
   const pastDateStrs = weekDates.filter(d => d.date < todayStr).map(d => d.date);
-  const { data: summaryRows } = pastDateStrs.length > 0
-    ? await supabase.from('daily_summary').select('date, screentime_minutes, pc_total_minutes, mobile_total_minutes').in('date', pastDateStrs)
-    : { data: [] };
+  const allPastAndToday = weekDates.filter(d => !d.isFuture).map(d => d.date);
+
+  const [{ data: summaryRows }, { data: sleepRows }] = await Promise.all([
+    pastDateStrs.length > 0
+      ? supabase.from('daily_summary').select('date, screentime_minutes, pc_total_minutes, mobile_total_minutes').in('date', pastDateStrs)
+      : Promise.resolve({ data: [] }),
+    allPastAndToday.length > 0
+      ? supabase.from('health_sleep_sessions').select('date, duration_minutes').in('date', allPastAndToday).gte('duration_minutes', 60)
+      : Promise.resolve({ data: [] }),
+  ]);
 
   const summaryMap = new Map((summaryRows || []).map((r: any) => [r.date, r]));
+  // For sleep: take the longest session per date (main sleep)
+  const sleepMap = new Map<string, number>();
+  for (const s of (sleepRows || []) as any[]) {
+    const prev = sleepMap.get(s.date) ?? 0;
+    if ((s.duration_minutes || 0) > prev) sleepMap.set(s.date, s.duration_minutes);
+  }
 
   // Today's stats come from live raw metrics
   const todayStats = await getDailyStats(todayStr);
@@ -118,7 +132,7 @@ export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
       else if (mobileTotalMinutes > pcTotalMinutes * 1.2) primaryDevice = 'mobile';
     }
 
-    return { date, dayName, totalMinutes: screenTimeMinutes, primaryDevice };
+    return { date, dayName, totalMinutes: screenTimeMinutes, primaryDevice, sleepMinutes: sleepMap.get(date) ?? 0 };
   });
 }
 
