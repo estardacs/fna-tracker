@@ -9,7 +9,10 @@ import KpiCard from '@/components/dashboard/KpiCard';
 import FadeIn from '@/components/dashboard/FadeIn';
 import SleepCard from '@/components/health/SleepCard';
 import WorkoutCard from '@/components/health/WorkoutCard';
-import { BookOpen, Clock, MonitorSmartphone, Zap, Gamepad2, Moon, Footprints, Heart, Scale } from 'lucide-react';
+import { BookOpen, Clock, MonitorSmartphone, Zap, Gamepad2, Moon, Footprints, Heart } from 'lucide-react';
+import WeightWidget from '@/components/diet/WeightWidget';
+import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 type DashboardContentProps = {
   date?: string;
@@ -197,19 +200,17 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
               subtext="kcal quemadas"
             />
           )}
-          <KpiCard
-            title="Peso"
-            value={health.weight.current !== null ? `${health.weight.current} kg` : '—'}
-            icon={<Scale className="text-purple-400 w-4 h-4 md:w-5 md:h-5" />}
-            subtext={
-              health.weight.current === null
-                ? 'Sin datos'
-                : health.weight.delta !== null
-                ? `${health.weight.delta > 0 ? '+' : ''}${health.weight.delta} kg esta semana`
-                : health.weight.bodyFat !== null
-                ? `${health.weight.bodyFat}% grasa`
-                : 'Sin cambio reciente'
-            }
+          <WeightWidget
+            weight={health.weight.current !== null && health.weight.date ? {
+              kg: health.weight.current,
+              date: health.weight.date,
+              daysAgo: Math.round(
+                (new Date(format(toZonedTime(new Date(), 'America/Santiago'), 'yyyy-MM-dd')).getTime()
+                  - new Date(health.weight.date).getTime()) / 86400000
+              ),
+              bodyFatPct: health.weight.bodyFat,
+            } : null}
+            date={date ?? format(toZonedTime(new Date(), 'America/Santiago'), 'yyyy-MM-dd')}
           />
         </div>
 

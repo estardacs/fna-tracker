@@ -58,6 +58,7 @@ export type HealthDailyStats = {
   } | null;
   weight: {
     current: number | null;
+    date: string | null;       // fecha del último registro
     previousWeek: number | null;
     delta: number | null;
     bodyFat: number | null;
@@ -210,6 +211,9 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
       : null,
     weight: {
       current: latestWeight?.weight_kg ?? null,
+      date: latestWeight
+        ? format(toZonedTime(new Date(latestWeight.created_at), TIMEZONE), 'yyyy-MM-dd')
+        : null,
       previousWeek: previousWeekWeight,
       delta: weightDelta,
       bodyFat: latestWeight?.body_fat_percent ?? null,

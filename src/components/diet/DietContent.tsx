@@ -30,7 +30,7 @@ export default function DietContent({ data }: DietContentProps) {
         <CalorieRing consumed={data.totals.calories} goal={data.goal.calories} />
         <MacroBars consumed={data.totals} goal={data.goal} />
         {/* Secondary stats */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-1 text-center md:text-left shrink-0">
+        <div className="flex flex-row md:flex-col flex-wrap gap-3 shrink-0">
           {data.totals.fiber_g > 0 && (
             <div className="bg-gray-900/40 border border-gray-800/40 rounded-lg px-4 py-2">
               <div className="text-[10px] text-gray-600 uppercase tracking-wide">Fibra</div>
