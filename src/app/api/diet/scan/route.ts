@@ -5,17 +5,20 @@ import { supabase } from '@/lib/supabase';
 export const dynamic = 'force-dynamic';
 
 // Phase 1: Parse the user description into a list of {name, grams}
-const PHASE1_SYSTEM = `Eres un asistente de nutrición. El usuario describe lo que comió.
-Extrae cada alimento mencionado y su cantidad en gramos.
+const PHASE1_SYSTEM = `Eres un asistente de nutrición. El usuario describe lo que comió o preparó.
+Extrae cada alimento mencionado y su cantidad en gramos PARA UNA SOLA PORCIÓN/UNIDAD.
 Responde ÚNICAMENTE con un JSON array válido (sin texto antes ni después):
 [
   { "name": "nombre del alimento sin cantidades", "grams": número_en_gramos }
 ]
 REGLAS:
+- CRÍTICO: Si el usuario dice "hice 4 de estos", "preparé 3 tappers", "tengo 6 porciones" etc.,
+  extrae SOLO las cantidades de UNA unidad/porción. Ignora el multiplicador completamente.
+  Ejemplo: "hice 4 tappers con 400g fideos" → { "fideos": 100 } (400 / 4 = 100g por tapper)
 - "hallulla" no es "hallulla (92g)" — omite el peso del nombre
-- Convierte medidas caseras a gramos: 1 taza ≈ 240g, 1 cucharada ≈ 15g, 1 huevo ≈ 55g
+- Convierte medidas caseras a gramos: 1 taza ≈ 240g, 1 cucharada ≈ 15g, 1 huevo ≈ 55g, 1/4 pechuga ≈ 125g
 - Si no se menciona cantidad, estima una porción típica en gramos
-- Si dice "1 unidad" de algo sin peso, usa el peso estándar de esa unidad
+- Para "1 paquete" usa el peso estándar del paquete (ej: salsa Arrabbiata ≈ 340g)
 - Para recetas caseras (queque, torta, etc.) reporta el peso del trozo/porción consumida
 - Devuelve siempre un array, aunque sea un solo alimento`;
 
@@ -42,8 +45,14 @@ REGLAS:
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function parseJSON(text: string): unknown {
-  const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
-  return JSON.parse(cleaned);
+  // Strip all markdown code fences, then extract from first [ to last ]
+  const stripped = text.replace(/```(?:json)?/g, '').trim();
+  const start = stripped.indexOf('[');
+  const end = stripped.lastIndexOf(']');
+  if (start !== -1 && end > start) {
+    return JSON.parse(stripped.slice(start, end + 1));
+  }
+  return JSON.parse(stripped);
 }
 
 export async function POST(req: NextRequest) {
@@ -52,7 +61,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { input, type } = body as { input: string; type: 'text' | 'image' };
+  const { input, type, text: extraText } = body as { input: string; type: 'text' | 'image'; text?: string };
 
   if (!input || !type) {
     return NextResponse.json({ error: 'input y type son requeridos' }, { status: 400 });
@@ -64,17 +73,21 @@ export async function POST(req: NextRequest) {
 
     if (type === 'image') {
       // For images, use single-phase: parse + estimate in one call
+      const userPrompt = extraText
+        ? `Contexto del usuario: ${extraText}\n\nExtrae la información nutricional de la etiqueta. Si el contexto indica una cantidad consumida, úsala como "grams".`
+        : 'Extrae la información nutricional de la etiqueta.';
+
       const imageResponse = await client.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
-        system: `Analiza esta etiqueta nutricional. Extrae los valores por 100g (o por porción si es más relevante).
-Responde ÚNICAMENTE con un JSON array:
-[{ "name": "...", "grams": null, "calories_per_100g": X, "protein_per_100g": X, "carbs_per_100g": X, "fat_per_100g": X, "fiber_per_100g": X, "sodium_per_100g": X }]`,
+        system: `Analiza esta etiqueta nutricional. Extrae los valores por 100g.
+Responde ÚNICAMENTE con un JSON array (sin texto antes ni después):
+[{ "name": "nombre del producto", "grams": número_o_null, "calories_per_100g": X, "protein_per_100g": X, "carbs_per_100g": X, "fat_per_100g": X, "fiber_per_100g": X, "sodium_per_100g": X }]`,
         messages: [{
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: input } },
-            { type: 'text', text: 'Extrae la información nutricional.' },
+            { type: 'text', text: userPrompt },
           ],
         }],
       });
