@@ -24,8 +24,15 @@ export default function DietContent({ data }: DietContentProps) {
     return () => clearTimeout(t);
   }, []);
 
-  const refresh = () => {
-    startTransition(() => router.refresh());
+  const refresh = () => startTransition(() => router.refresh());
+
+  const handleGoalSave = async (kcal: number) => {
+    await fetch('/api/diet/goals', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calories: kcal }),
+    });
+    refresh();
   };
 
   return (
@@ -33,7 +40,7 @@ export default function DietContent({ data }: DietContentProps) {
       <div className="space-y-8">
         {/* Summary row */}
         <div className="flex flex-col md:flex-row gap-6 md:gap-10 items-center md:items-start bg-gray-900/30 border border-gray-800/50 rounded-2xl p-6">
-          <CalorieRing consumed={data.totals.calories} goal={data.goal.calories} />
+          <CalorieRing consumed={data.totals.calories} goal={data.goal.calories} onGoalSave={handleGoalSave} />
           <MacroBars consumed={data.totals} goal={data.goal} />
           {/* Secondary stats */}
           <div
