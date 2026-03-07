@@ -786,7 +786,13 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
               </div>
             </div>
 
-            {isOpen && (
+            <div
+              className={cn(
+                'grid transition-[grid-template-rows] duration-300 ease-in-out',
+                isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+              )}
+            >
+              <div className="overflow-hidden">
               <div className="border-t border-gray-800/40 px-4 py-3 space-y-2">
                 {combo.combo_items.map((ci) => {
                   const g = getGrams(combo.id, ci.id, ci.grams_consumed);
@@ -808,7 +814,8 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
                   );
                 })}
               </div>
-            )}
+              </div>
+            </div>
           </div>
         );
       })}
@@ -821,6 +828,24 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
 // ============================================================
 export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodModalProps) {
   const [tab, setTab] = useState<Tab>('buscar');
+  const [activeTab, setActiveTab] = useState<Tab>('buscar');
+  const [tabVisible, setTabVisible] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 10);
+    return () => clearTimeout(t);
+  }, []);
+
+  const switchTab = (next: Tab) => {
+    if (next === tab) return;
+    setTabVisible(false);
+    setTimeout(() => {
+      setTab(next);
+      setActiveTab(next);
+      setTabVisible(true);
+    }, 120);
+  };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'buscar',   label: 'Buscar',   icon: <Search className="w-3.5 h-3.5" /> },
@@ -832,8 +857,26 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 backdrop-blur-sm"
+        style={{
+          background: 'rgba(0,0,0,0.75)',
+          opacity: mounted ? 1 : 0,
+          transition: 'opacity 0.25s ease',
+        }}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div
+        className="relative bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl"
+        style={{
+          opacity: mounted ? 1 : 0,
+          transform: mounted ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.97)',
+          transition: 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1)',
+        }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-800">
           <div>
@@ -853,10 +896,10 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
           {tabs.map(({ id, label, icon }) => (
             <button
               key={id}
-              onClick={() => setTab(id)}
+              onClick={() => switchTab(id)}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors cursor-pointer border-b-2',
-                tab === id
+                'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-all duration-200 cursor-pointer border-b-2',
+                activeTab === id
                   ? 'text-white border-blue-500'
                   : 'text-gray-500 hover:text-gray-300 border-transparent'
               )}
@@ -867,7 +910,14 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
         </div>
 
         {/* Content */}
-        <div className="p-5 max-h-[65vh] overflow-y-auto">
+        <div
+          className="p-5 max-h-[65vh] overflow-y-auto"
+          style={{
+            opacity: tabVisible ? 1 : 0,
+            transform: tabVisible ? 'translateY(0)' : 'translateY(4px)',
+            transition: 'opacity 0.15s ease, transform 0.15s ease',
+          }}
+        >
           {tab === 'buscar'   && <SearchTab meal={meal} date={date} onAdded={handleAdded} />}
           {tab === 'escanear' && <ScanTab   meal={meal} date={date} onAdded={handleAdded} />}
           {tab === 'combos'   && <CombosTab meal={meal} date={date} onAdded={handleAdded} />}

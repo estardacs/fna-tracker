@@ -9,17 +9,50 @@ export const dynamic = 'force-dynamic';
 
 function DietSkeleton() {
   return (
-    <div className="animate-pulse space-y-6">
-      <div className="bg-gray-900/30 border border-gray-800/50 rounded-2xl p-6 flex gap-6">
-        <div className="w-40 h-40 rounded-full bg-gray-800 shrink-0" />
-        <div className="flex-1 space-y-3 py-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-4 bg-gray-800 rounded-full" style={{ width: `${70 - i * 10}%` }} />
+    <div className="space-y-6">
+      {/* Summary row skeleton */}
+      <div className="bg-gray-900/30 border border-gray-800/50 rounded-2xl p-6 flex flex-col md:flex-row gap-6 md:gap-10 items-center md:items-start">
+        {/* Calorie ring */}
+        <div className="shrink-0 flex flex-col items-center gap-3">
+          <div className="w-40 h-40 rounded-full bg-gray-800/60 animate-pulse" />
+          <div className="w-24 h-3.5 bg-gray-800/60 rounded-full animate-pulse" />
+        </div>
+        {/* Macro bars */}
+        <div className="flex-1 min-w-[200px] space-y-4 w-full">
+          <div className="w-16 h-3 bg-gray-800/60 rounded-full animate-pulse" />
+          {[80, 65, 55, 40].map((w, i) => (
+            <div key={i} className="space-y-1.5">
+              <div className="flex justify-between">
+                <div className="h-3 bg-gray-800/60 rounded-full animate-pulse" style={{ width: `${w * 0.5}px` }} />
+                <div className="h-3 w-16 bg-gray-800/60 rounded-full animate-pulse" />
+              </div>
+              <div className="h-1.5 bg-gray-800/60 rounded-full animate-pulse" />
+            </div>
+          ))}
+        </div>
+        {/* Secondary stats */}
+        <div className="flex flex-row md:flex-col gap-3 shrink-0">
+          {[0, 1].map((i) => (
+            <div key={i} className="w-20 h-12 bg-gray-800/60 rounded-lg animate-pulse" />
           ))}
         </div>
       </div>
+
+      {/* Meal section skeletons */}
       {[...Array(5)].map((_, i) => (
-        <div key={i} className="h-14 bg-gray-900/30 border border-gray-800/50 rounded-xl" />
+        <div
+          key={i}
+          className="border border-gray-800/50 rounded-xl bg-gray-900/20 animate-pulse"
+          style={{ animationDelay: `${i * 80}ms` }}
+        >
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 bg-gray-800 rounded" />
+              <div className="h-3.5 bg-gray-800 rounded-full" style={{ width: `${60 + i * 8}px` }} />
+            </div>
+            <div className="w-16 h-6 bg-gray-800 rounded-md" />
+          </div>
+        </div>
       ))}
     </div>
   );
