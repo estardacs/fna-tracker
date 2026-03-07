@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Search, Camera, Package2, Plus, Loader2, Check, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -855,7 +856,11 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
 
   const handleAdded = () => { onAdded(); onClose(); };
 
-  return (
+  // Portal: render outside all stacking contexts so z-index works correctly
+  // (parent divs with transform create stacking contexts that trap z-index)
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
@@ -923,6 +928,7 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
           {tab === 'combos'   && <CombosTab meal={meal} date={date} onAdded={handleAdded} />}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
