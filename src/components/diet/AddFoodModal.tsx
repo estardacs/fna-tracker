@@ -1,24 +1,57 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
-import { X, Search, Camera, ChefHat, Plus, Loader2 } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { X, Search, Camera, Package2, Plus, Loader2, Check, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// ---- Types ----
 interface FoodItem {
   id: string;
   name: string;
   brand?: string;
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-  fiber_g: number;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+  fiber_per_100g?: number;
   serving_label?: string;
+  use_count?: number;
+  similarity_score?: number;
 }
 
-interface Recipe {
+interface ComboItem {
+  id: string;
+  grams_consumed: number;
+  food_items: {
+    id: string;
+    name: string;
+    calories_per_100g: number;
+    protein_per_100g: number;
+    carbs_per_100g: number;
+    fat_per_100g: number;
+  };
+}
+
+interface Combo {
   id: string;
   name: string;
+  use_count: number;
+  last_used: string | null;
+  combo_items: ComboItem[];
+}
+
+interface ScanSuggestion {
+  name: string;
+  grams: number;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+  fiber_per_100g: number;
+  sodium_per_100g: number;
+  matched_food: { id: string; name: string; similarity: number } | null;
+  // after user decision:
+  use_existing: boolean;
 }
 
 interface AddFoodModalProps {
@@ -36,17 +69,86 @@ const MEAL_LABELS: Record<string, string> = {
   snack: 'Snack',
 };
 
-type Tab = 'buscar' | 'escanear' | 'recetas';
+type Tab = 'buscar' | 'escanear' | 'combos';
 
-// ---- Search Tab ----
+const QUICK_GRAMS = [50, 100, 150, 200, 300];
+
+// ---- Macros preview row ----
+function MacroRow({ food, grams }: { food: FoodItem; grams: number }) {
+  const f = grams / 100;
+  return (
+    <div className="flex gap-2 flex-wrap mt-1.5 text-[10px] font-mono">
+      <span className="bg-orange-500/10 text-orange-400 px-1.5 py-0.5 rounded">
+        {Math.round(food.calories_per_100g * f)} kcal
+      </span>
+      <span className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">
+        P {(food.protein_per_100g * f).toFixed(1)}g
+      </span>
+      <span className="bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded">
+        C {(food.carbs_per_100g * f).toFixed(1)}g
+      </span>
+      <span className="bg-pink-500/10 text-pink-400 px-1.5 py-0.5 rounded">
+        G {(food.fat_per_100g * f).toFixed(1)}g
+      </span>
+    </div>
+  );
+}
+
+// ---- Grams input ----
+function GramsInput({ value, onChange }: { value: number; onChange: (g: number) => void }) {
+  return (
+    <div className="space-y-2">
+      <label className="text-xs text-gray-400">Cantidad</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value) || 0)}
+          className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-blue-500 font-mono"
+        />
+        <span className="text-xs text-gray-500">g</span>
+        <div className="flex gap-1 flex-wrap">
+          {QUICK_GRAMS.map((g) => (
+            <button
+              key={g}
+              onClick={() => onChange(g)}
+              className={cn(
+                'text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer',
+                value === g
+                  ? 'bg-blue-600 border-blue-500 text-white'
+                  : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300'
+              )}
+            >
+              {g}g
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// BUSCAR TAB
+// ============================================================
 function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdded: () => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FoodItem[]>([]);
+  const [recientes, setRecientes] = useState<FoodItem[]>([]);
   const [selected, setSelected] = useState<FoodItem | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [grams, setGrams] = useState(100);
   const [loading, setLoading] = useState(false);
   const [logging, setLogging] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/diet/food-items?recientes=1')
+      .then((r) => r.json())
+      .then(setRecientes)
+      .catch(() => {});
+  }, []);
 
   const search = useCallback(async (q: string) => {
     if (!q.trim()) { setResults([]); return; }
@@ -60,13 +162,13 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
   }, []);
 
   const log = async () => {
-    if (!selected) return;
+    if (!selected || grams <= 0) return;
     setLogging(true);
     try {
       await fetch('/api/diet/log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, meal, food_item_id: selected.id, quantity }),
+        body: JSON.stringify({ date, meal, food_item_id: selected.id, grams_consumed: grams }),
       });
       onAdded();
     } finally {
@@ -75,46 +177,47 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
   };
 
   if (showCreate) {
-    return <CreateFoodForm meal={meal} date={date} initialName={query} onAdded={onAdded} onBack={() => setShowCreate(false)} />;
+    return (
+      <CreateFoodForm
+        meal={meal}
+        date={date}
+        initialName={query}
+        onAdded={onAdded}
+        onBack={() => setShowCreate(false)}
+      />
+    );
   }
 
   if (selected) {
     return (
       <div className="space-y-4">
-        <button onClick={() => setSelected(null)} className="text-xs text-blue-400 hover:text-blue-300 cursor-pointer">← Volver</button>
-        <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-          <div className="font-medium text-white">{selected.name}</div>
-          {selected.brand && <div className="text-xs text-gray-500">{selected.brand}</div>}
-          <div className="flex gap-3 mt-2 text-xs text-gray-400">
-            <span>{selected.calories} kcal</span>
-            <span>P: {selected.protein_g}g</span>
-            <span>C: {selected.carbs_g}g</span>
-            <span>G: {selected.fat_g}g</span>
+        <button onClick={() => setSelected(null)} className="text-xs text-blue-400 hover:text-blue-300 cursor-pointer">
+          ← Volver
+        </button>
+        <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+          <div className="font-medium text-white text-sm">{selected.name}</div>
+          {selected.brand && <div className="text-[10px] text-gray-500">{selected.brand}</div>}
+          <div className="text-[10px] text-gray-600 mt-0.5">
+            {selected.calories_per_100g.toFixed(0)} kcal / 100g
           </div>
-          {selected.serving_label && <div className="text-[10px] text-gray-600 mt-1">Porción: {selected.serving_label}</div>}
         </div>
-        <div>
-          <label className="text-xs text-gray-400 block mb-1">Porciones</label>
-          <input
-            type="number"
-            min="0.1"
-            step="0.1"
-            value={quantity}
-            onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-            className="w-24 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-          />
-          <span className="text-xs text-gray-500 ml-2">= {(selected.calories * quantity).toFixed(0)} kcal</span>
-        </div>
+
+        <GramsInput value={grams} onChange={setGrams} />
+        <MacroRow food={selected} grams={grams} />
+
         <button
           onClick={log}
-          disabled={logging}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer"
+          disabled={logging || grams <= 0}
+          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors cursor-pointer mt-2"
         >
           {logging ? <Loader2 className="animate-spin mx-auto w-4 h-4" /> : 'Agregar al registro'}
         </button>
       </div>
     );
   }
+
+  const displayList = query.trim() ? results : [];
+  const showRecientes = !query.trim() && recientes.length > 0;
 
   return (
     <div className="space-y-3">
@@ -125,31 +228,34 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
           placeholder="Buscar alimento..."
           value={query}
           onChange={(e) => { setQuery(e.target.value); search(e.target.value); }}
-          className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500"
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-9 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500"
           autoFocus
         />
         {loading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 animate-spin" />}
       </div>
 
-      {results.length > 0 && (
-        <ul className="space-y-1 max-h-52 overflow-y-auto">
-          {results.map((item) => (
-            <li
-              key={item.id}
-              onClick={() => setSelected(item)}
-              className="flex justify-between items-center px-3 py-2 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors"
-            >
-              <div>
-                <div className="text-sm text-white">{item.name}</div>
-                {item.brand && <div className="text-[10px] text-gray-500">{item.brand}</div>}
-              </div>
-              <span className="text-xs text-gray-400 font-mono">{item.calories} kcal</span>
-            </li>
+      {/* Recientes */}
+      {showRecientes && (
+        <div>
+          <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-1.5">Recientes</p>
+          <ul className="space-y-1">
+            {recientes.map((item) => (
+              <FoodRow key={item.id} item={item} onSelect={() => setSelected(item)} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Search results */}
+      {displayList.length > 0 && (
+        <ul className="space-y-1 max-h-48 overflow-y-auto">
+          {displayList.map((item) => (
+            <FoodRow key={item.id} item={item} onSelect={() => setSelected(item)} />
           ))}
         </ul>
       )}
 
-      {query.length > 0 && results.length === 0 && !loading && (
+      {query.trim() && displayList.length === 0 && !loading && (
         <div className="text-center py-4">
           <p className="text-sm text-gray-500 mb-3">No se encontró &ldquo;{query}&rdquo;</p>
           <button
@@ -161,55 +267,74 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
         </div>
       )}
 
-      {query.length === 0 && (
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" /> Crear nuevo alimento
-        </button>
-      )}
+      <button
+        onClick={() => setShowCreate(true)}
+        className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 cursor-pointer"
+      >
+        <Plus className="w-3.5 h-3.5" /> Crear alimento manualmente
+      </button>
     </div>
   );
 }
 
+function FoodRow({ item, onSelect }: { item: FoodItem; onSelect: () => void }) {
+  return (
+    <li
+      onClick={onSelect}
+      className="flex justify-between items-center px-3 py-2.5 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors"
+    >
+      <div className="min-w-0">
+        <div className="text-sm text-white truncate">{item.name}</div>
+        {item.brand && <div className="text-[10px] text-gray-500">{item.brand}</div>}
+      </div>
+      <span className="text-xs text-gray-500 font-mono ml-3 shrink-0">
+        {item.calories_per_100g?.toFixed(0) ?? '—'} kcal/100g
+      </span>
+    </li>
+  );
+}
+
 // ---- Create Food Form ----
-function CreateFoodForm({ meal, date, initialName = '', onAdded, onBack }: { meal: string; date: string; initialName?: string; onAdded: () => void; onBack: () => void }) {
+function CreateFoodForm({
+  meal, date, initialName = '', onAdded, onBack,
+}: {
+  meal: string; date: string; initialName?: string; onAdded: () => void; onBack: () => void;
+}) {
   const [form, setForm] = useState({
-    name: initialName, brand: '', calories: '', protein_g: '', carbs_g: '', fat_g: '',
-    fiber_g: '', sodium_mg: '', sugar_g: '', serving_size_g: '', serving_label: '',
+    name: initialName, brand: '',
+    calories_per_100g: '', protein_per_100g: '', carbs_per_100g: '', fat_per_100g: '',
+    fiber_per_100g: '', sodium_per_100g: '', serving_label: '',
   });
-  const [quantity, setQuantity] = useState(1);
+  const [grams, setGrams] = useState(100);
   const [saving, setSaving] = useState(false);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = async () => {
-    if (!form.name || !form.calories) return;
+    if (!form.name || !form.calories_per_100g) return;
     setSaving(true);
     try {
       const res = await fetch('/api/diet/food-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...form,
-          calories: parseFloat(form.calories) || 0,
-          protein_g: parseFloat(form.protein_g) || 0,
-          carbs_g: parseFloat(form.carbs_g) || 0,
-          fat_g: parseFloat(form.fat_g) || 0,
-          fiber_g: parseFloat(form.fiber_g) || 0,
-          sodium_mg: parseFloat(form.sodium_mg) || 0,
-          sugar_g: parseFloat(form.sugar_g) || 0,
-          serving_size_g: parseFloat(form.serving_size_g) || null,
-          serving_label: form.serving_label || null,
+          name: form.name,
           brand: form.brand || null,
+          calories_per_100g: parseFloat(form.calories_per_100g) || 0,
+          protein_per_100g:  parseFloat(form.protein_per_100g)  || 0,
+          carbs_per_100g:    parseFloat(form.carbs_per_100g)    || 0,
+          fat_per_100g:      parseFloat(form.fat_per_100g)      || 0,
+          fiber_per_100g:    parseFloat(form.fiber_per_100g)    || 0,
+          sodium_per_100g:   parseFloat(form.sodium_per_100g)   || 0,
+          serving_label:     form.serving_label || null,
+          serving_size_g:    100,
         }),
       });
       const { item } = await res.json();
       await fetch('/api/diet/log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, meal, food_item_id: item.id, quantity }),
+        body: JSON.stringify({ date, meal, food_item_id: item.id, grams_consumed: grams }),
       });
       onAdded();
     } finally {
@@ -217,12 +342,11 @@ function CreateFoodForm({ meal, date, initialName = '', onAdded, onBack }: { mea
     }
   };
 
-  const field = (k: string, label: string, type = 'number', placeholder = '') => (
+  const field = (k: string, label: string, type = 'number') => (
     <div>
       <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">{label}</label>
       <input
         type={type}
-        placeholder={placeholder}
         value={(form as any)[k]}
         onChange={(e) => set(k, e.target.value)}
         className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
@@ -232,33 +356,24 @@ function CreateFoodForm({ meal, date, initialName = '', onAdded, onBack }: { mea
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-xs text-blue-400 hover:text-blue-300 cursor-pointer">← Volver</button>
+      <button onClick={onBack} className="text-xs text-blue-400 hover:text-blue-300 cursor-pointer">
+        ← Volver
+      </button>
+      <p className="text-xs text-gray-500">Los valores nutricionales van por 100g</p>
       <div className="grid grid-cols-2 gap-2">
         <div className="col-span-2">{field('name', 'Nombre', 'text')}</div>
         <div className="col-span-2">{field('brand', 'Marca (opcional)', 'text')}</div>
-        {field('calories', 'Calorías (kcal)')}
-        {field('protein_g', 'Proteína (g)')}
-        {field('carbs_g', 'Carbos (g)')}
-        {field('fat_g', 'Grasas (g)')}
-        {field('fiber_g', 'Fibra (g)')}
-        {field('sodium_mg', 'Sodio (mg)')}
-        {field('serving_size_g', 'Tamaño porción (g)')}
-        {field('serving_label', 'Descripción porción', 'text', '1 taza (240ml)')}
+        {field('calories_per_100g', 'Calorías / 100g')}
+        {field('protein_per_100g',  'Proteína / 100g')}
+        {field('carbs_per_100g',    'Carbos / 100g')}
+        {field('fat_per_100g',      'Grasas / 100g')}
+        {field('fiber_per_100g',    'Fibra / 100g')}
+        {field('sodium_per_100g',   'Sodio mg / 100g')}
       </div>
-      <div>
-        <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">Porciones a registrar</label>
-        <input
-          type="number"
-          min="0.1"
-          step="0.1"
-          value={quantity}
-          onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-          className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-        />
-      </div>
+      <GramsInput value={grams} onChange={setGrams} />
       <button
         onClick={save}
-        disabled={saving || !form.name || !form.calories}
+        disabled={saving || !form.name || !form.calories_per_100g}
         className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer"
       >
         {saving ? <Loader2 className="animate-spin mx-auto w-4 h-4" /> : 'Guardar y registrar'}
@@ -267,26 +382,14 @@ function CreateFoodForm({ meal, date, initialName = '', onAdded, onBack }: { mea
   );
 }
 
-// ---- Scan Tab ----
-interface SuggestionItem {
-  name: string;
-  brand?: string | null;
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-  fiber_g: number;
-  sodium_mg: number;
-  sugar_g: number;
-  serving_size_g?: number | null;
-  serving_label?: string | null;
-}
-
+// ============================================================
+// ESCANEAR TAB
+// ============================================================
 function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded: () => void }) {
   const [text, setText] = useState('');
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [suggestions, setSuggestions] = useState<SuggestionItem[] | null>(null);
+  const [suggestions, setSuggestions] = useState<ScanSuggestion[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -314,15 +417,16 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
         ),
       });
       const data = await res.json();
-      if (!res.ok || data.error) {
-        setError(data.error ?? `Error ${res.status}`);
-        return;
-      }
-      if (data.suggestions?.length > 0) {
-        setSuggestions(data.suggestions);
-      } else {
-        setError('No se encontraron alimentos en la descripción.');
-      }
+      if (!res.ok || data.error) { setError(data.error ?? `Error ${res.status}`); return; }
+      if (!data.suggestions?.length) { setError('No se detectaron alimentos.'); return; }
+
+      setSuggestions(
+        data.suggestions.map((s: any) => ({
+          ...s,
+          grams:        s.grams ?? 100,
+          use_existing: !!s.matched_food,
+        }))
+      );
     } catch (e: any) {
       setError(e.message ?? 'Error de red');
     } finally {
@@ -330,10 +434,19 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
     }
   };
 
-  const updateSuggestion = (idx: number, key: string, val: string) => {
-    setSuggestions((prev) => prev
-      ? prev.map((s, i) => i === idx ? { ...s, [key]: key === 'name' || key === 'brand' || key === 'serving_label' ? val : parseFloat(val) || 0 } : s)
-      : prev
+  const updateGrams = (idx: number, g: number) => {
+    setSuggestions((prev) => prev ? prev.map((s, i) => i === idx ? { ...s, grams: g } : s) : prev);
+  };
+
+  const updateField = (idx: number, key: string, val: string | number) => {
+    setSuggestions((prev) =>
+      prev ? prev.map((s, i) => i === idx ? { ...s, [key]: typeof val === 'string' ? parseFloat(val) || 0 : val } : s) : prev
+    );
+  };
+
+  const toggleUseExisting = (idx: number) => {
+    setSuggestions((prev) =>
+      prev ? prev.map((s, i) => i === idx ? { ...s, use_existing: !s.use_existing } : s) : prev
     );
   };
 
@@ -342,17 +455,36 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
     setSaving(true);
     try {
       for (const s of suggestions) {
-        const res = await fetch('/api/diet/food-items', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...s, serving_size_g: s.serving_size_g ?? null, serving_label: s.serving_label ?? null, brand: s.brand ?? null }),
-        });
-        const { item } = await res.json();
-        await fetch('/api/diet/log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date, meal, food_item_id: item.id, quantity: 1 }),
-        });
+        if (s.use_existing && s.matched_food) {
+          // Use existing food item
+          await fetch('/api/diet/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date, meal, food_item_id: s.matched_food.id, grams_consumed: s.grams }),
+          });
+        } else {
+          // Create new food item (per-100g) + log
+          const res = await fetch('/api/diet/food-items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: s.name,
+              calories_per_100g: s.calories_per_100g,
+              protein_per_100g:  s.protein_per_100g,
+              carbs_per_100g:    s.carbs_per_100g,
+              fat_per_100g:      s.fat_per_100g,
+              fiber_per_100g:    s.fiber_per_100g,
+              sodium_per_100g:   s.sodium_per_100g,
+              serving_size_g:    100,
+            }),
+          });
+          const { item } = await res.json();
+          await fetch('/api/diet/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date, meal, food_item_id: item.id, grams_consumed: s.grams }),
+          });
+        }
       }
       onAdded();
     } finally {
@@ -364,44 +496,30 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
     return (
       <div className="space-y-4">
         <p className="text-xs text-green-400">
-          {suggestions.length === 1 ? '1 alimento detectado' : `${suggestions.length} alimentos detectados`} — revisa y ajusta si es necesario:
+          {suggestions.length === 1 ? '1 alimento' : `${suggestions.length} alimentos`} — revisa y ajusta:
         </p>
-        <div className="space-y-4 max-h-[45vh] overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-[42vh] overflow-y-auto pr-1">
           {suggestions.map((s, idx) => (
-            <div key={idx} className="bg-gray-900 border border-gray-700 rounded-lg p-3 space-y-2">
-              <input
-                type="text"
-                value={s.name}
-                onChange={(e) => updateSuggestion(idx, 'name', e.target.value)}
-                className="w-full bg-transparent border-b border-gray-700 pb-1 text-sm font-medium text-white focus:outline-none focus:border-blue-500"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                {(['calories', 'protein_g', 'carbs_g', 'fat_g'] as const).map((k) => (
-                  <div key={k}>
-                    <label className="text-[10px] text-gray-600 block">{k === 'calories' ? 'Kcal' : k === 'protein_g' ? 'Proteína g' : k === 'carbs_g' ? 'Carbos g' : 'Grasa g'}</label>
-                    <input
-                      type="number"
-                      value={s[k]}
-                      onChange={(e) => updateSuggestion(idx, k, e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ScanItemCard
+              key={idx}
+              s={s}
+              onGramsChange={(g) => updateGrams(idx, g)}
+              onFieldChange={(k, v) => updateField(idx, k, v)}
+              onToggleExisting={() => toggleUseExisting(idx)}
+            />
           ))}
         </div>
         <button
           onClick={saveAll}
           disabled={saving}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer"
+          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors cursor-pointer"
         >
           {saving
             ? <Loader2 className="animate-spin mx-auto w-4 h-4" />
-            : suggestions.length === 1 ? 'Guardar y registrar' : `Guardar y registrar ${suggestions.length} alimentos`}
+            : suggestions.length === 1 ? 'Registrar' : `Registrar ${suggestions.length} alimentos`}
         </button>
-        <button onClick={() => { setSuggestions(null); setError(null); }} className="w-full text-xs text-gray-500 hover:text-gray-300 cursor-pointer">
-          Volver a escanear
+        <button onClick={() => { setSuggestions(null); setError(null); }} className="w-full text-xs text-gray-600 hover:text-gray-400 cursor-pointer">
+          ← Volver a escanear
         </button>
       </div>
     );
@@ -410,11 +528,11 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
   return (
     <div className="space-y-4">
       <div>
-        <label className="text-xs text-gray-400 block mb-1">
-          Describe lo que comiste <span className="text-gray-600">(puedes incluir varios alimentos)</span>
+        <label className="text-xs text-gray-400 block mb-1.5">
+          Describe lo que comiste
         </label>
         <textarea
-          placeholder="Ej: 92gr de hallulla, 64gr de huevo, 96gr de durazno"
+          placeholder="Ej: 92g de hallulla, 2 huevos revueltos, 96g de durazno"
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={3}
@@ -441,15 +559,15 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
       </div>
 
       {error && (
-        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-          {error}
+        <p className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {error}
         </p>
       )}
 
       <button
         onClick={scan}
         disabled={scanning || (!text.trim() && !imageB64)}
-        className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer"
+        className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors cursor-pointer"
       >
         {scanning ? (
           <span className="flex items-center justify-center gap-2">
@@ -461,27 +579,253 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
   );
 }
 
-// ---- Recipes Tab ----
-function RecipesTab({ meal, date, onAdded }: { meal: string; date: string; onAdded: () => void }) {
-  const [recipes] = useState<Recipe[]>([]);
+function ScanItemCard({
+  s, onGramsChange, onFieldChange, onToggleExisting,
+}: {
+  s: ScanSuggestion;
+  onGramsChange: (g: number) => void;
+  onFieldChange: (k: string, v: string | number) => void;
+  onToggleExisting: () => void;
+}) {
+  const [expanded, setExpanded] = useState(!s.matched_food);
+
+  const activeMacros: FoodItem = {
+    id: '', name: s.name,
+    calories_per_100g: s.calories_per_100g,
+    protein_per_100g:  s.protein_per_100g,
+    carbs_per_100g:    s.carbs_per_100g,
+    fat_per_100g:      s.fat_per_100g,
+  };
 
   return (
-    <div className="text-center py-8 text-gray-500 text-sm">
-      {recipes.length === 0
-        ? 'Aún no tienes recetas creadas.'
-        : recipes.map((r) => <div key={r.id}>{r.name}</div>)}
+    <div className="bg-gray-900 border border-gray-700/80 rounded-lg p-3 space-y-2.5">
+      {/* Name + match badge */}
+      <div className="flex items-start justify-between gap-2">
+        <input
+          type="text"
+          value={s.name}
+          onChange={(e) => onFieldChange('name', e.target.value)}
+          className="flex-1 bg-transparent border-b border-gray-700 pb-0.5 text-sm font-medium text-white focus:outline-none focus:border-blue-500"
+        />
+        {s.matched_food && (
+          <button
+            onClick={onToggleExisting}
+            className={cn(
+              'shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors',
+              s.use_existing
+                ? 'border-green-600 text-green-400 bg-green-500/10'
+                : 'border-gray-600 text-gray-500 bg-transparent hover:border-gray-500'
+            )}
+          >
+            <Check className="w-3 h-3" />
+            {s.use_existing ? `Usando "${s.matched_food.name}"` : 'Usar existente'}
+          </button>
+        )}
+      </div>
+
+      {/* Grams */}
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={s.grams}
+          onChange={(e) => onGramsChange(Number(e.target.value) || 0)}
+          className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-blue-500 font-mono"
+        />
+        <span className="text-[10px] text-gray-500">g</span>
+        <div className="flex gap-1">
+          {QUICK_GRAMS.map((g) => (
+            <button
+              key={g}
+              onClick={() => onGramsChange(g)}
+              className={cn(
+                'text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer',
+                s.grams === g
+                  ? 'bg-blue-600/30 border-blue-600 text-blue-400'
+                  : 'bg-transparent border-gray-700 text-gray-600 hover:text-gray-400'
+              )}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Macros */}
+      <MacroRow food={activeMacros} grams={s.grams} />
+
+      {/* Editable per-100g fields (for new items) */}
+      {!s.use_existing && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 cursor-pointer"
+        >
+          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          Editar macros / 100g
+        </button>
+      )}
+      {!s.use_existing && expanded && (
+        <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-gray-800">
+          {([
+            ['calories_per_100g', 'Kcal/100g'],
+            ['protein_per_100g',  'Prot/100g'],
+            ['carbs_per_100g',    'Carbos/100g'],
+            ['fat_per_100g',      'Grasas/100g'],
+          ] as [string, string][]).map(([k, label]) => (
+            <div key={k}>
+              <label className="text-[10px] text-gray-600 block">{label}</label>
+              <input
+                type="number"
+                value={(s as any)[k]}
+                onChange={(e) => onFieldChange(k, e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-// ---- Modal Shell ----
+// ============================================================
+// COMBOS TAB
+// ============================================================
+function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdded: () => void }) {
+  const [combos, setCombos] = useState<Combo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [logging, setLogging] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [comboGrams, setComboGrams] = useState<Record<string, Record<string, number>>>({});
+
+  useEffect(() => {
+    fetch('/api/diet/combos')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setCombos(data);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const getGrams = (comboId: string, itemId: string, defaultG: number) =>
+    comboGrams[comboId]?.[itemId] ?? defaultG;
+
+  const setGrams = (comboId: string, itemId: string, g: number) =>
+    setComboGrams((prev) => ({
+      ...prev,
+      [comboId]: { ...(prev[comboId] ?? {}), [itemId]: g },
+    }));
+
+  const logCombo = async (combo: Combo) => {
+    setLogging(combo.id);
+    try {
+      const items = combo.combo_items.map((ci) => ({
+        food_item_id:   ci.food_items.id,
+        grams_consumed: getGrams(combo.id, ci.id, ci.grams_consumed),
+      }));
+      await fetch('/api/diet/combos/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ combo_id: combo.id, date, meal, items }),
+      });
+      onAdded();
+    } finally {
+      setLogging(null);
+    }
+  };
+
+  if (loading) {
+    return <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 text-gray-600 animate-spin" /></div>;
+  }
+
+  if (combos.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-500 text-sm space-y-2">
+        <Package2 className="w-8 h-8 mx-auto text-gray-700" />
+        <p>Aún no tienes combos guardados.</p>
+        <p className="text-xs text-gray-600">
+          Los combos (tappers, desayunos habituales) permiten<br />registrar varios alimentos de una vez.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {combos.map((combo) => {
+        const isOpen = expandedId === combo.id;
+        const totalKcal = combo.combo_items.reduce((sum, ci) => {
+          const g = getGrams(combo.id, ci.id, ci.grams_consumed);
+          return sum + (ci.food_items.calories_per_100g * g / 100);
+        }, 0);
+
+        return (
+          <div key={combo.id} className="border border-gray-800 rounded-xl overflow-hidden">
+            <div
+              className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-900/40 transition-colors"
+              onClick={() => setExpandedId(isOpen ? null : combo.id)}
+            >
+              <div>
+                <div className="text-sm font-medium text-gray-200">{combo.name}</div>
+                <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                  {Math.round(totalKcal)} kcal · {combo.combo_items.length} items
+                  {combo.use_count > 0 && ` · usado ${combo.use_count}×`}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); logCombo(combo); }}
+                  disabled={logging === combo.id}
+                  className="flex items-center gap-1 text-[10px] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors"
+                >
+                  {logging === combo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                  Agregar
+                </button>
+                {isOpen ? <ChevronUp className="w-4 h-4 text-gray-600" /> : <ChevronDown className="w-4 h-4 text-gray-600" />}
+              </div>
+            </div>
+
+            {isOpen && (
+              <div className="border-t border-gray-800/40 px-4 py-3 space-y-2">
+                {combo.combo_items.map((ci) => {
+                  const g = getGrams(combo.id, ci.id, ci.grams_consumed);
+                  const kcal = (ci.food_items.calories_per_100g * g / 100).toFixed(0);
+                  return (
+                    <div key={ci.id} className="flex items-center gap-3">
+                      <span className="text-xs text-gray-300 flex-1 truncate">{ci.food_items.name}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={g}
+                        onChange={(e) => setGrams(combo.id, ci.id, Number(e.target.value) || ci.grams_consumed)}
+                        className="w-14 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-blue-500 font-mono"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span className="text-[10px] text-gray-600">g</span>
+                      <span className="text-[10px] text-gray-500 font-mono w-14 text-right">{kcal} kcal</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// MODAL SHELL
+// ============================================================
 export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodModalProps) {
   const [tab, setTab] = useState<Tab>('buscar');
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'buscar', label: 'Buscar', icon: <Search className="w-3.5 h-3.5" /> },
+    { id: 'buscar',   label: 'Buscar',   icon: <Search className="w-3.5 h-3.5" /> },
     { id: 'escanear', label: 'Escanear', icon: <Camera className="w-3.5 h-3.5" /> },
-    { id: 'recetas', label: 'Recetas', icon: <ChefHat className="w-3.5 h-3.5" /> },
+    { id: 'combos',   label: 'Combos',   icon: <Package2 className="w-3.5 h-3.5" /> },
   ];
 
   const handleAdded = () => { onAdded(); onClose(); };
@@ -496,7 +840,10 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
             <h2 className="font-semibold text-white">Agregar alimento</h2>
             <p className="text-xs text-gray-500">{MEAL_LABELS[meal] ?? meal}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors cursor-pointer text-gray-400 hover:text-white">
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors cursor-pointer text-gray-400 hover:text-white"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -508,10 +855,10 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
               key={id}
               onClick={() => setTab(id)}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors cursor-pointer',
+                'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors cursor-pointer border-b-2',
                 tab === id
-                  ? 'text-white border-b-2 border-blue-500'
-                  : 'text-gray-500 hover:text-gray-300 border-b-2 border-transparent'
+                  ? 'text-white border-blue-500'
+                  : 'text-gray-500 hover:text-gray-300 border-transparent'
               )}
             >
               {icon} {label}
@@ -521,9 +868,9 @@ export default function AddFoodModal({ meal, date, onClose, onAdded }: AddFoodMo
 
         {/* Content */}
         <div className="p-5 max-h-[65vh] overflow-y-auto">
-          {tab === 'buscar' && <SearchTab meal={meal} date={date} onAdded={handleAdded} />}
-          {tab === 'escanear' && <ScanTab meal={meal} date={date} onAdded={handleAdded} />}
-          {tab === 'recetas' && <RecipesTab meal={meal} date={date} onAdded={handleAdded} />}
+          {tab === 'buscar'   && <SearchTab meal={meal} date={date} onAdded={handleAdded} />}
+          {tab === 'escanear' && <ScanTab   meal={meal} date={date} onAdded={handleAdded} />}
+          {tab === 'combos'   && <CombosTab meal={meal} date={date} onAdded={handleAdded} />}
         </div>
       </div>
     </div>

@@ -11,9 +11,8 @@ export interface DietGoal {
 export interface DietLogEntry {
   id: string;
   food_item_id?: string;
-  recipe_id?: string;
   name: string;
-  quantity: number;
+  grams_consumed: number | null;
   calories: number;
   protein_g: number;
   carbs_g: number;
@@ -42,15 +41,17 @@ export interface FoodItem {
   id: string;
   name: string;
   brand?: string;
-  calories: number;
-  protein_g: number;
-  carbs_g: number;
-  fat_g: number;
-  fiber_g: number;
-  sodium_mg: number;
-  sugar_g: number;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+  fiber_per_100g: number;
+  sodium_per_100g: number;
+  sugar_per_100g: number;
   serving_size_g?: number;
   serving_label?: string;
+  use_count?: number;
+  similarity_score?: number;
 }
 
 const MEAL_ORDER = ['desayuno', 'almuerzo', 'once', 'cena', 'snack'];
@@ -63,7 +64,7 @@ export async function getDietDayStats(dateStr?: string): Promise<DietDayStats> {
   const [logRes, goalRes] = await Promise.all([
     supabase
       .from('diet_log')
-      .select('*, food_items(name), recipes(name)')
+      .select('*, food_items(name)')
       .eq('date', date)
       .order('logged_at', { ascending: true }),
     supabase.from('diet_goals').select('*').eq('id', 1).single(),
@@ -71,10 +72,10 @@ export async function getDietDayStats(dateStr?: string): Promise<DietDayStats> {
 
   const goal: DietGoal = goalRes.data
     ? {
-        calories: goalRes.data.calories ?? 1700,
+        calories:  goalRes.data.calories  ?? 1700,
         protein_g: goalRes.data.protein_g ?? 130,
-        carbs_g: goalRes.data.carbs_g ?? 170,
-        fat_g: goalRes.data.fat_g ?? 60,
+        carbs_g:   goalRes.data.carbs_g   ?? 170,
+        fat_g:     goalRes.data.fat_g     ?? 60,
       }
     : { calories: 1700, protein_g: 130, carbs_g: 170, fat_g: 60 };
 
@@ -85,24 +86,20 @@ export async function getDietDayStats(dateStr?: string): Promise<DietDayStats> {
   const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, sodium_mg: 0, sugar_g: 0 };
 
   for (const row of (logRes.data || []) as any[]) {
-    const name =
-      (row.food_items as any)?.name ??
-      (row.recipes as any)?.name ??
-      'Desconocido';
+    const name = (row.food_items as any)?.name ?? 'Desconocido';
 
     const entry: DietLogEntry = {
-      id: row.id,
-      food_item_id: row.food_item_id ?? undefined,
-      recipe_id: row.recipe_id ?? undefined,
+      id:             row.id,
+      food_item_id:   row.food_item_id ?? undefined,
       name,
-      quantity: row.quantity,
-      calories: row.calories,
+      grams_consumed: row.grams_consumed ?? null,
+      calories:  row.calories,
       protein_g: row.protein_g,
-      carbs_g: row.carbs_g,
-      fat_g: row.fat_g,
-      fiber_g: row.fiber_g ?? 0,
+      carbs_g:   row.carbs_g,
+      fat_g:     row.fat_g,
+      fiber_g:   row.fiber_g ?? 0,
       sodium_mg: row.sodium_mg ?? 0,
-      sugar_g: row.sugar_g ?? 0,
+      sugar_g:   row.sugar_g ?? 0,
     };
 
     if (meals[row.meal]) meals[row.meal].push(entry);
@@ -122,24 +119,25 @@ export async function getDietDayStats(dateStr?: string): Promise<DietDayStats> {
 export async function searchFoodItems(query: string): Promise<FoodItem[]> {
   const { data } = await supabase
     .from('food_items')
-    .select('*')
+    .select('id, name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, serving_size_g, serving_label, use_count')
     .ilike('name', `%${query}%`)
-    .order('name', { ascending: true })
+    .order('use_count', { ascending: false })
     .limit(20);
 
   return (data || []).map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    brand: r.brand ?? undefined,
-    calories: r.calories,
-    protein_g: r.protein_g,
-    carbs_g: r.carbs_g,
-    fat_g: r.fat_g,
-    fiber_g: r.fiber_g ?? 0,
-    sodium_mg: r.sodium_mg ?? 0,
-    sugar_g: r.sugar_g ?? 0,
-    serving_size_g: r.serving_size_g ?? undefined,
-    serving_label: r.serving_label ?? undefined,
+    id:                r.id,
+    name:              r.name,
+    brand:             r.brand ?? undefined,
+    calories_per_100g: Number(r.calories_per_100g ?? 0),
+    protein_per_100g:  Number(r.protein_per_100g  ?? 0),
+    carbs_per_100g:    Number(r.carbs_per_100g     ?? 0),
+    fat_per_100g:      Number(r.fat_per_100g       ?? 0),
+    fiber_per_100g:    Number(r.fiber_per_100g     ?? 0),
+    sodium_per_100g:   Number(r.sodium_per_100g    ?? 0),
+    sugar_per_100g:    Number(r.sugar_per_100g     ?? 0),
+    serving_size_g:    r.serving_size_g ?? undefined,
+    serving_label:     r.serving_label  ?? undefined,
+    use_count:         r.use_count      ?? 0,
   }));
 }
 
