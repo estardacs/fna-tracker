@@ -6,6 +6,7 @@ export interface DietGoal {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g: number;
 }
 
 export interface DietLogEntry {
@@ -72,12 +73,13 @@ export async function getDietDayStats(dateStr?: string): Promise<DietDayStats> {
 
   const goal: DietGoal = goalRes.data
     ? {
-        calories:  goalRes.data.calories  ?? 1700,
-        protein_g: goalRes.data.protein_g ?? 130,
-        carbs_g:   goalRes.data.carbs_g   ?? 170,
-        fat_g:     goalRes.data.fat_g     ?? 60,
+        calories:  goalRes.data.calories  ?? 2300,
+        protein_g: goalRes.data.protein_g ?? 160,
+        carbs_g:   goalRes.data.carbs_g   ?? 240,
+        fat_g:     goalRes.data.fat_g     ?? 75,
+        fiber_g:   goalRes.data.fiber_g   ?? 38,
       }
-    : { calories: 1700, protein_g: 130, carbs_g: 170, fat_g: 60 };
+    : { calories: 2300, protein_g: 160, carbs_g: 240, fat_g: 75, fiber_g: 38 };
 
   const meals: Record<string, DietLogEntry[]> = Object.fromEntries(
     MEAL_ORDER.map((m) => [m, []])
@@ -144,6 +146,6 @@ export async function searchFoodItems(query: string): Promise<FoodItem[]> {
 export async function getGoal(): Promise<DietGoal> {
   const { data } = await supabase.from('diet_goals').select('*').eq('id', 1).single();
   return data
-    ? { calories: data.calories, protein_g: data.protein_g, carbs_g: data.carbs_g, fat_g: data.fat_g }
-    : { calories: 1700, protein_g: 130, carbs_g: 170, fat_g: 60 };
+    ? { calories: data.calories, protein_g: data.protein_g, carbs_g: data.carbs_g, fat_g: data.fat_g, fiber_g: data.fiber_g ?? 38 }
+    : { calories: 2300, protein_g: 160, carbs_g: 240, fat_g: 75, fiber_g: 38 };
 }

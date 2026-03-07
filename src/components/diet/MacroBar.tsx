@@ -47,7 +47,7 @@ function Bar({ label, consumed, goal, unit = 'g', colorClass, delay = 0 }: Macro
 
 interface MacroBarsProps {
   consumed: { protein_g: number; carbs_g: number; fat_g: number; fiber_g: number };
-  goal: { protein_g: number; carbs_g: number; fat_g: number };
+  goal: { protein_g: number; carbs_g: number; fat_g: number; fiber_g: number };
 }
 
 export default function MacroBars({ consumed, goal }: MacroBarsProps) {
@@ -57,7 +57,7 @@ export default function MacroBars({ consumed, goal }: MacroBarsProps) {
       <Bar label="Proteína"      consumed={consumed.protein_g} goal={goal.protein_g} colorClass="bg-blue-500"  delay={150} />
       <Bar label="Carbohidratos" consumed={consumed.carbs_g}   goal={goal.carbs_g}   colorClass="bg-amber-500" delay={220} />
       <Bar label="Grasas"        consumed={consumed.fat_g}     goal={goal.fat_g}     colorClass="bg-pink-500"  delay={290} />
-      <Bar label="Fibra"         consumed={consumed.fiber_g}   goal={0}              colorClass="bg-green-500" delay={360} />
+      <Bar label="Fibra"         consumed={consumed.fiber_g}   goal={goal.fiber_g}   colorClass="bg-green-500" delay={360} />
     </div>
   );
 }
