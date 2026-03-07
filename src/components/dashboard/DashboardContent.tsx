@@ -1,4 +1,5 @@
 import { getDailyStats, getWeeklyStats, getReadingStreak } from '@/lib/data-processor';
+import { getHealthDailyStats } from '@/lib/health-processor';
 import ActivityChart from '@/components/dashboard/ActivityChart';
 import AppsList from '@/components/dashboard/AppsList';
 import RecentActivity from '@/components/dashboard/RecentActivity';
@@ -6,7 +7,9 @@ import LocationCard from '@/components/dashboard/LocationCard';
 import WeeklyGrid from '@/components/dashboard/WeeklyGrid';
 import KpiCard from '@/components/dashboard/KpiCard';
 import FadeIn from '@/components/dashboard/FadeIn';
-import { BookOpen, Clock, MonitorSmartphone, Zap, Gamepad2 } from 'lucide-react';
+import SleepCard from '@/components/health/SleepCard';
+import WorkoutCard from '@/components/health/WorkoutCard';
+import { BookOpen, Clock, MonitorSmartphone, Zap, Gamepad2, Moon, Footprints, Heart, Scale } from 'lucide-react';
 
 type DashboardContentProps = {
   date?: string;
@@ -14,9 +17,10 @@ type DashboardContentProps = {
 
 export default async function DashboardContent({ date }: DashboardContentProps) {
   // Fetch data in parallel for better performance
-  const [stats, weeklyStats] = await Promise.all([
+  const [stats, weeklyStats, health] = await Promise.all([
     getDailyStats(date),
-    getWeeklyStats()
+    getWeeklyStats(),
+    getHealthDailyStats(date),
   ]);
 
   const todayStr = weeklyStats.find(d => d.totalMinutes > 0)?.date;
@@ -99,7 +103,7 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
   return (
     <FadeIn>
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-6 mb-8 md:mb-12">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-6 mb-8 md:mb-12">
         <KpiCard
           title="Tiempo Pantalla"
           value={formatDuration(stats.screenTimeMinutes)}
@@ -107,6 +111,12 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
           subtext={date ? "Combinado" : "Total Hoy"}
           avgMinutes={avgScreenTime ?? undefined}
           currentMinutes={stats.screenTimeMinutes}
+        />
+        <KpiCard
+          title="Sueño"
+          value={stats.sleepMinutes > 0 ? formatDuration(stats.sleepMinutes) : '—'}
+          icon={<Moon className="text-indigo-400 w-4 h-4 md:w-6 md:h-6" />}
+          subtext={stats.sleepMinutes > 0 ? 'horas dormidas' : 'Sin datos'}
         />
         <KpiCard 
           title="Tiempo en PC" 
@@ -156,6 +166,59 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
         />
         <RecentActivity events={stats.recentEvents} />
       </div>
+
+      {/* Health Section */}
+      <section className="mt-10 mb-8">
+        <h3 className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-4">Salud</h3>
+
+        {/* Health KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+          {health.steps > 0 && (
+            <KpiCard
+              title="Pasos"
+              value={health.steps >= 1000 ? `${(health.steps / 1000).toFixed(1)}k` : `${health.steps}`}
+              icon={<Footprints className="text-emerald-400 w-4 h-4 md:w-5 md:h-5" />}
+              subtext={`${Math.round((health.steps / 8000) * 100)}% de meta`}
+            />
+          )}
+          {health.heartRate.avg > 0 && (
+            <KpiCard
+              title="Frec. Cardíaca"
+              value={`${health.heartRate.avg}`}
+              icon={<Heart className="text-rose-400 w-4 h-4 md:w-5 md:h-5" />}
+              subtext={health.heartRate.timeline.length > 0 ? `bpm prom · reposo ${health.heartRate.resting || '—'}` : 'bpm en reposo'}
+            />
+          )}
+          {health.caloriesBurned > 0 && (
+            <KpiCard
+              title="Calorías"
+              value={`${health.caloriesBurned}`}
+              icon={<Zap className="text-orange-400 w-4 h-4 md:w-5 md:h-5" />}
+              subtext="kcal quemadas"
+            />
+          )}
+          <KpiCard
+            title="Peso"
+            value={health.weight.current !== null ? `${health.weight.current} kg` : '—'}
+            icon={<Scale className="text-purple-400 w-4 h-4 md:w-5 md:h-5" />}
+            subtext={
+              health.weight.current === null
+                ? 'Sin datos'
+                : health.weight.delta !== null
+                ? `${health.weight.delta > 0 ? '+' : ''}${health.weight.delta} kg esta semana`
+                : health.weight.bodyFat !== null
+                ? `${health.weight.bodyFat}% grasa`
+                : 'Sin cambio reciente'
+            }
+          />
+        </div>
+
+        {/* Sleep + Workouts */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SleepCard sleep={health.sleep} />
+          <WorkoutCard workouts={health.workouts} />
+        </div>
+      </section>
 
       {/* Weekly Summary */}
       <section className="mt-12 mb-6">

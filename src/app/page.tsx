@@ -6,7 +6,7 @@ import DashboardContent from '@/components/dashboard/DashboardContent';
 import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton';
 
 import HistoryButton from '@/components/history/HistoryButton';
-import HealthButton from '@/components/health/HealthButton';
+import DietButton from '@/components/diet/DietButton';
 
 export const dynamic = 'force-dynamic'; // No caching, real-time data
 
@@ -49,7 +49,7 @@ export default async function Home({
             {targetDate ? 'VISTA HISTÓRICA' : 'SISTEMA ONLINE'}
           </div>
           <div className="flex items-center justify-between md:justify-end gap-2">
-            <HealthButton />
+            <DietButton />
             <HistoryButton />
             <DateNavigator />
           </div>

@@ -95,21 +95,23 @@ export default function SleepCard({ sleep }: Props) {
           <Moon className="w-4 h-4 text-indigo-400" />
           <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider">Sueño</h3>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-gray-500">
-          <span>{formatTime(sleep.sleepStart)}</span>
-          <span>→</span>
-          <span>{formatTime(sleep.sleepEnd)}</span>
-          {sleep.score > 0 && (
-            <span className="ml-1 bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded font-mono">
-              {sleep.score}%
-            </span>
-          )}
-        </div>
+        {sleep.score > 0 && (
+          <span className="bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded font-mono text-[10px]">
+            {sleep.score}%
+          </span>
+        )}
       </div>
 
-      {/* Total */}
-      <div className="mb-3">
+      {/* Total + Bedtime prominente */}
+      <div className="flex items-end justify-between mb-3">
         <span className="text-2xl font-bold text-gray-100 tracking-tight">{formatDuration(sleep.totalMinutes)}</span>
+        <div className="flex flex-col items-end gap-1">
+          <span className="flex items-center gap-1.5 bg-indigo-500/15 border border-indigo-500/20 text-indigo-300 text-sm font-semibold px-2.5 py-1 rounded-lg">
+            <Moon className="w-3.5 h-3.5" />
+            {formatTime(sleep.sleepStart)}
+          </span>
+          <span className="text-[10px] text-gray-500 pr-0.5">→ {formatTime(sleep.sleepEnd)}</span>
+        </div>
       </div>
 
       {/* Hipnogram (phases timeline) */}

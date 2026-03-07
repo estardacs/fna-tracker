@@ -64,6 +64,7 @@ export type DashboardStats = {
     screenTime: { office: number; home: number; outside: number };
   };
   simultaneousMinutes: number;
+  sleepMinutes: number;
 };
 
 export type WeeklyDayStat = {
@@ -182,6 +183,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   if (!allMetrics || allMetrics.length === 0) {
       return {
           pcTotalMinutes: 0, mobileTotalMinutes: 0, readingMinutes: 0, screenTimeMinutes: 0, simultaneousMinutes: 0, gamingMinutes: 0,
+          sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
           booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
           activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
           pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
@@ -430,6 +432,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
 
   return {
     pcTotalMinutes: totalPcSeconds / 60, mobileTotalMinutes: totalMobileSeconds / 60, screenTimeMinutes: exactDedupMs / 1000 / 60, simultaneousMinutes: simultaneousMs / 1000 / 60, readingMinutes: totalReadingMinutes,
+    sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
     gamingMinutes: totalGamingSeconds / 60, gamesPlayedToday: Array.from(gamesMap.entries()).map(([title, sec]) => ({ title, timeSpentSec: sec })).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
     booksReadToday: Array.from(booksFinalMap.values()).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
     activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile, sleep: sleepHourly[hour] || 0 })).sort((a, b) => a.hour.localeCompare(b.hour)),
@@ -484,6 +487,7 @@ function buildStatsFromSummary(s: any, sleepHourly: Record<string, number> = {})
     gamingMinutes:      s.gaming_minutes       || 0,
     screenTimeMinutes:  s.screentime_minutes   || 0,
     simultaneousMinutes: s.simultaneous_minutes || 0,
+    sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
     booksReadToday:    books,
     gamesPlayedToday:  games,
     topMobileApps:     mobileApps,

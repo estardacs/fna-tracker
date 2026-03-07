@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from 'recharts';
 import { format, parseISO, addWeeks, subWeeks, addMonths, subMonths, addYears, subYears, startOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Moon, Footprints, Flame } from 'lucide-react';
 
 // --- Components ---
 
@@ -157,6 +157,28 @@ function HistoryCard({ item, period }: { item: HistoryItem, period: PeriodType }
                         <span className="font-mono">{formatMinutes(app.minutes)}</span>
                     </div>
                 ))}
+                {(item.sleepMinutes > 0 || item.steps > 0 || item.calories > 0) && (
+                    <div className="flex gap-3 pt-1.5 border-t border-gray-800/50 mt-1 flex-wrap">
+                        {item.sleepMinutes > 0 && (
+                            <span className="flex items-center gap-1 text-indigo-400/80">
+                                <Moon className="w-2.5 h-2.5" />
+                                {formatMinutes(item.sleepMinutes)}
+                            </span>
+                        )}
+                        {item.steps > 0 && (
+                            <span className="flex items-center gap-1 text-emerald-400/80">
+                                <Footprints className="w-2.5 h-2.5" />
+                                {item.steps >= 1000 ? `${(item.steps / 1000).toFixed(1)}k` : item.steps}
+                            </span>
+                        )}
+                        {item.calories > 0 && (
+                            <span className="flex items-center gap-1 text-orange-400/80">
+                                <Flame className="w-2.5 h-2.5" />
+                                {item.calories.toFixed(0)} kcal
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -177,12 +199,29 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
       </div>
 
       {/* Totals Summary Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 mb-4">
         <SummaryStat label="Tiempo Total" value={formatMinutes(totals.screenTime)} colorClass="text-white" />
         <SummaryStat label="PC" value={formatMinutes(totals.pc)} colorClass="text-blue-400" />
         <SummaryStat label="Móvil" value={formatMinutes(totals.mobile)} colorClass="text-purple-400" />
         <SummaryStat label="Lectura" value={formatMinutes(totals.reading)} colorClass="text-green-400" />
         <SummaryStat label="Juego" value={formatMinutes(totals.gaming)} colorClass="text-indigo-400" />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 mb-8">
+        {totals.totalSleepMinutes > 0 && (
+          <SummaryStat label="Sueño total" value={formatMinutes(totals.totalSleepMinutes)} colorClass="text-indigo-300" />
+        )}
+        {totals.avgSleepMinutes > 0 && (
+          <SummaryStat label={period === 'yearly' ? 'Sueño prom/sem' : 'Sueño prom/noche'} value={formatMinutes(totals.avgSleepMinutes)} colorClass="text-indigo-400" />
+        )}
+        {totals.totalSteps > 0 && (
+          <SummaryStat label="Pasos totales" value={totals.totalSteps >= 1000 ? `${(totals.totalSteps / 1000).toFixed(0)}k` : `${totals.totalSteps}`} colorClass="text-emerald-400" />
+        )}
+        {totals.totalCalories > 0 && (
+          <SummaryStat label="Calorías totales" value={`${totals.totalCalories.toFixed(0)} kcal`} colorClass="text-orange-400" />
+        )}
+        {totals.avgCalories > 0 && (
+          <SummaryStat label={period === 'yearly' ? 'Kcal prom/sem' : 'Kcal prom/día'} value={`${totals.avgCalories} kcal`} colorClass="text-amber-400" />
+        )}
         <SummaryStat label="En Casa" value={formatMinutes(totals.home)} colorClass="text-emerald-400" />
         <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
         <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
