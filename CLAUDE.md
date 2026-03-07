@@ -27,30 +27,32 @@ The app is deployed on **Vercel** and connected to a **Supabase** backend.
 This is the most critical architectural concept. There are **two completely separate data sources** depending on which view you're rendering:
 
 ### Layer 1 — Live Dashboard (`/`)
-- Reads directly from the raw **`metrics`** table
+- Reads directly from the raw **`metrics`** table for today
+- For **past dates** via `?date=`, `getDailyStats()` first checks `daily_summary`; if found, returns it via `buildStatsFromSummary()` (raw metrics may have been deleted). Falls back to raw metrics if no summary exists.
 - `src/lib/data-processor.ts` processes all raw rows in-memory on each request
 - The page has `export const dynamic = 'force-dynamic'` — no caching ever
 - A client component `RealtimeRefresher` calls `router.refresh()` every **30 seconds** to poll for new data
-- This is the "live" view; data is as fresh as the last device ping
 
 ### Layer 2 — History (`/history`)
-- Reads from pre-aggregated **`daily_summary`** and **`weekly_summary`** tables
-- `src/lib/history-processor.ts` queries these tables; they are pre-computed
+- Reads exclusively from the pre-aggregated **`daily_summary`** table
+- `src/lib/history-processor.ts` queries this table; all periods (weekly/monthly/yearly) use it
 - **Raw `metrics` are deleted after summarization** — historical dates have no raw data
-- A Supabase Edge Function (`supabase/functions/summarize-daily/`) runs nightly to aggregate yesterday into `daily_summary`, then rolls up into `weekly_summary`, `monthly_summary`, `yearly_summary`
+- The `/history` page **triggers summarization on every load** by calling the Edge Function directly (`triggerSummarize()`) — ensures yesterday is always summarized before displaying history
+- A Supabase Edge Function (`supabase/functions/summarize-daily/`) can also run nightly (cron) to aggregate yesterday into `daily_summary`, then rolls up into `weekly_summary`, `monthly_summary`, `yearly_summary`
 
 ### Data Flow
 
 ```
 Devices
-  └──→ metrics (raw) ──→ [live dashboard reads directly]
+  └──→ metrics (raw) ──→ [live dashboard: today only]
+             │                └──→ [getDailyStats for past dates: tries daily_summary first]
              │
-             └──→ [summarize-daily Edge Fn, runs nightly]
+             └──→ [summarize-daily Edge Fn, triggered on /history load + optional nightly cron]
                         │
-                        ├──→ daily_summary  ──→ [history weekly/monthly view]
-                        ├──→ weekly_summary ──→ [history yearly view]
-                        ├──→ monthly_summary
-                        └──→ yearly_summary
+                        ├──→ daily_summary  ──→ [ALL history views: weekly/monthly/yearly]
+                        ├──→ weekly_summary ──→ [rolled up, but NOT queried by history-processor]
+                        ├──→ monthly_summary  (same — rolled up but not currently read)
+                        └──→ yearly_summary   (same — rolled up but not currently read)
                   (raw metrics deleted after summarization)
 ```
 
@@ -64,6 +66,7 @@ Devices
 | `/history` | `src/app/history/page.tsx` | Server | History view. Accepts `?period=weekly\|monthly\|yearly&date=yyyy-MM-dd` |
 | `/test-db` | `src/app/test-db/page.tsx` | Server | Debug page: shows env var status + last 5 raw metrics records |
 | `/api/track/wearable` | `src/app/api/track/wearable/route.ts` | API | POST endpoint for Xiaomi Band data ingestion |
+| `/api/summarize` | `src/app/api/summarize/route.ts` | API | POST endpoint that triggers the `summarize-daily` Edge Function. Called internally by the history page. |
 
 All pages use `export const dynamic = 'force-dynamic'`.
 
@@ -104,10 +107,15 @@ The app follows a **Server Component + Client Island** pattern:
 
 ## Data Processing (`src/lib/data-processor.ts`)
 
-`getDailyStats(dateStr?)` is the core function. It:
+Exports three functions:
+- `getDailyStats(dateStr?)` — core stats for one day
+- `getWeeklyStats()` — 7-day grid data (past days from `daily_summary`, today from live)
+- `getReadingStreak(todayHasReading)` — counts consecutive days with reading from `daily_summary`; called in `DashboardContent` to show "Racha: N días seguidos" badge on the reading KPI
 
-1. Converts `dateStr` (or today) to Santiago-local day boundaries, then back to UTC for Supabase queries
-2. Queries `metrics` table in a **single fetch** for all device IDs, then filters in-memory
+`getDailyStats(dateStr?)` logic:
+
+1. For **past dates**: queries `daily_summary` first → if found, returns via `buildStatsFromSummary()` (reconstructs `DashboardStats` from the summary row; note: per-device app breakdown and recent events are unavailable in this path)
+2. For **today** (or no summary found): converts `dateStr` to Santiago-local day boundaries, queries `metrics` table in a **single fetch** for all device IDs, then filters in-memory
 3. Processes each device type separately, then merges for unified stats
 
 ### PC Processing
@@ -126,6 +134,7 @@ The app follows a **Server Component + Client Island** pattern:
 - Separate `device_id = 'moon-reader'` records contain `metadata.book_title` and `value` (percentage)
 - Cross-referenced with mobile Moon+ app events within a ±20-minute window to calculate actual reading time per book
 - Fallback: if no book found in current day's reading data, queries the last `moon-reader` record before today
+- `cleanBookTitle()` normalizes filenames (strips extensions, replaces `-_` with spaces). Special case: any title containing `"shadow-slave"` or `"shadow slave"` → `"Shadow Slave"`
 
 ### Deduplication (`screenTimeMinutes`)
 - Both PC and mobile events push `{start, end}` intervals into `allIntervals[]`
@@ -157,11 +166,11 @@ Each minute of the day gets a "level": PC Escritorio=3, Laptop=2, Mobile=1. This
 
 ## History Processing (`src/lib/history-processor.ts`)
 
-`getHistoryData(period, dateStr?)` queries pre-aggregated tables:
-- `weekly` / `monthly` → queries `daily_summary` table (field: `date`)
-- `yearly` → queries `weekly_summary` table (field: `week_start_date`)
+`getHistoryData(period, dateStr?)` queries only `daily_summary` for all periods:
+- `weekly` / `monthly` → queries `daily_summary` for the date range of that week/month
+- `yearly` → calls `getYearlyFromDailySummary()`, which queries **all of `daily_summary` for the year** and groups rows by week (Monday) in-memory. **Does NOT use `weekly_summary`.**
 
-Returns a `HistoryPayload` with individual `items[]` and `totals` (aggregated across the period). The `topApps`, `topGames`, `topBooks` in totals merge the JSONB summary columns from all rows.
+Returns a `HistoryPayload` with individual `items[]` and `totals` (aggregated across the period). The `topApps`, `topGames`, `topBooks` in totals merge the JSONB summary columns from all rows (top 10 apps, top 5 games/books).
 
 Navigation uses `requestDate` (anchor date) passed through `?date=` query param. Period switching clears the date param.
 
@@ -239,9 +248,11 @@ Simple POST endpoint for the Xiaomi Band. Validates `secret === 'fna-tracker-upl
 ```
 NEXT_PUBLIC_SUPABASE_URL       # Supabase project URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY  # Supabase anon key (safe for browser)
+SUMMARIZER_SECRET              # Secret for authenticating calls to summarize-daily Edge Function
+                               # Used by: /history page, /api/summarize route, and the Edge Function itself
 ```
 
-Both are used in client and server code via `createClient()`. The Edge Function uses `SUPABASE_SERVICE_ROLE_KEY` (server-only, set in Supabase dashboard).
+`NEXT_PUBLIC_*` vars are used in both client and server code via `createClient()`. The Edge Function additionally uses `SUPABASE_SERVICE_ROLE_KEY` (server-only, set in Supabase dashboard).
 
 ---
 
