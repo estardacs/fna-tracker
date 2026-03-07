@@ -53,12 +53,14 @@ export async function POST(request: Request) {
       }
 
       case 'sleep': {
-        // Insert sesión de sueño
-        // date = fecha en que despiertas (mañana lógica)
+        // Upsert por (date, start_time) para evitar duplicados cuando WorkManager re-ejecuta
         const sleepDate = data.date || todayStr;
         const { error } = await supabase
           .from('health_sleep_sessions')
-          .insert({ date: sleepDate, ...data });
+          .upsert(
+            { date: sleepDate, ...data },
+            { onConflict: 'date,start_time' }
+          );
         if (error) throw error;
         break;
       }

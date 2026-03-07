@@ -115,9 +115,11 @@ async function HealthContent({ date }: { date?: string }) {
           icon={<Heart className="text-rose-400 w-4 h-4 md:w-6 md:h-6" />}
           subtext={
             stats.heartRate.avg > 0 ? (
-              <span>
-                bpm prom · reposo {stats.heartRate.resting > 0 ? `${stats.heartRate.resting}` : '—'}
-              </span>
+              stats.heartRate.timeline.length > 0 ? (
+                <span>bpm prom · reposo {stats.heartRate.resting > 0 ? `${stats.heartRate.resting}` : '—'}</span>
+              ) : (
+                <span>bpm en reposo</span>
+              )
             ) : 'Sin datos'
           }
         />

@@ -108,7 +108,8 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
       .from('health_sleep_sessions')
       .select('*')
       .eq('date', resolvedDateStr)
-      .order('start_time', { ascending: false })
+      .gte('duration_minutes', 60)  // ignorar siestas / sesiones de test
+      .order('duration_minutes', { ascending: false })  // la más larga = sueño principal
       .limit(1)
       .maybeSingle(),
     supabase
@@ -132,7 +133,9 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
   // HR stats from timeline
   const hrTimeline: { time: string; bpm: number }[] = m?.heart_rate_timeline || [];
   const hrValues = hrTimeline.map((p) => p.bpm).filter((v) => v > 0);
-  const hrAvg = hrValues.length > 0 ? Math.round(hrValues.reduce((a, b) => a + b, 0) / hrValues.length) : 0;
+  const hrAvgFromTimeline = hrValues.length > 0 ? Math.round(hrValues.reduce((a, b) => a + b, 0) / hrValues.length) : 0;
+  // Fallback: si no hay timeline, usar resting_heart_rate como indicador principal
+  const hrAvg = hrAvgFromTimeline > 0 ? hrAvgFromTimeline : (m?.resting_heart_rate || 0);
   const hrMin = hrValues.length > 0 ? Math.min(...hrValues) : 0;
   const hrMax = hrValues.length > 0 ? Math.max(...hrValues) : 0;
 
