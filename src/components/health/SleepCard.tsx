@@ -13,6 +13,7 @@ type SleepData = {
   sleepStart: string;
   sleepEnd: string;
   phases: { start: string; end: string; phase: 'deep' | 'light' | 'rem' | 'awake' }[];
+  naps: { start: string; end: string; durationMinutes: number }[];
 };
 
 type Props = { sleep: SleepData | null };
@@ -155,6 +156,25 @@ export default function SleepCard({ sleep }: Props) {
           </div>
         ))}
       </div>
+
+      {/* Siestas */}
+      {sleep.naps.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-800/50">
+          <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">
+            Siesta{sleep.naps.length > 1 ? 's' : ''} ({sleep.naps.length})
+          </p>
+          <div className="flex flex-col gap-1">
+            {sleep.naps.map((nap, i) => (
+              <div key={i} className="flex items-center justify-between text-[10px]">
+                <span className="text-gray-500">
+                  {formatTime(nap.start)} → {formatTime(nap.end)}
+                </span>
+                <span className="font-mono text-gray-400">{formatDuration(nap.durationMinutes)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

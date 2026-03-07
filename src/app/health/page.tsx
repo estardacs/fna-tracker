@@ -131,7 +131,12 @@ async function HealthContent({ date }: { date?: string }) {
             stats.sleep ? (
               <span>
                 {sleepScore !== null && sleepScore > 0 ? `Calidad ${sleepScore}% · ` : ''}
-                Profundo {formatDuration(stats.sleep.deepMinutes)}
+                {stats.sleep.deepMinutes > 0
+                  ? `Profundo ${formatDuration(stats.sleep.deepMinutes)}`
+                  : `${formatDuration(stats.sleep.totalMinutes)} nocturno`}
+                {stats.sleep.naps.length > 0
+                  ? ` · ${stats.sleep.naps.length} siesta${stats.sleep.naps.length > 1 ? 's' : ''}`
+                  : ''}
               </span>
             ) : 'Sin datos'
           }

@@ -54,6 +54,7 @@ export type HealthDailyStats = {
     sleepStart: string;
     sleepEnd: string;
     phases: { start: string; end: string; phase: 'deep' | 'light' | 'rem' | 'awake' }[];
+    naps: { start: string; end: string; durationMinutes: number }[];
   } | null;
   weight: {
     current: number | null;
@@ -108,10 +109,7 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
       .from('health_sleep_sessions')
       .select('*')
       .eq('date', resolvedDateStr)
-      .gte('duration_minutes', 60)  // ignorar siestas / sesiones de test
-      .order('duration_minutes', { ascending: false })  // la más larga = sueño principal
-      .limit(1)
-      .maybeSingle(),
+      .order('duration_minutes', { ascending: false }),
     supabase
       .from('health_weight_log')
       .select('weight_kg, body_fat_percent, created_at')
@@ -126,7 +124,10 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
   ]);
 
   const m = metricsRes.data;
-  const sleep = sleepRes.data;
+  const allSleepSessions: any[] = sleepRes.data || [];
+  // Sueño principal = el más largo (≥ 60 min). Siestas = el resto.
+  const sleep = allSleepSessions.find((s) => (s.duration_minutes || 0) >= 60) || null;
+  const naps = allSleepSessions.filter((s) => s !== sleep && (s.duration_minutes || 0) > 0);
   const latestWeight = latestWeightRes.data;
   const weightHistory: { weight_kg: number; created_at: string }[] = weightHistoryRes.data || [];
 
@@ -200,6 +201,11 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
           sleepStart: sleep.start_time,
           sleepEnd: sleep.end_time,
           phases: sleep.sleep_stages_timeline || [],
+          naps: naps.map((n) => ({
+            start: n.start_time,
+            end: n.end_time,
+            durationMinutes: n.duration_minutes || 0,
+          })),
         }
       : null,
     weight: {
