@@ -166,10 +166,10 @@ export default function SleepCard({ sleep }: Props) {
           <div className="flex flex-col gap-1">
             {sleep.naps.map((nap, i) => (
               <div key={i} className="flex items-center justify-between text-[10px]">
-                <span className="text-gray-500">
-                  {formatTime(nap.start)} → {formatTime(nap.end)}
+                <span className="text-gray-400">
+                  Siesta de {formatTime(nap.start)} a {formatTime(nap.end)}
                 </span>
-                <span className="font-mono text-gray-400">{formatDuration(nap.durationMinutes)}</span>
+                <span className="font-mono text-gray-500">{formatDuration(nap.durationMinutes)}</span>
               </div>
             ))}
           </div>
