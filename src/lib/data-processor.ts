@@ -34,7 +34,7 @@ export type DashboardStats = {
   mobileTotalMinutes: number;
   readingMinutes: number;
   booksReadToday: { title: string; percent: number; timeSpentSec: number }[];
-  activityTimeline: { hour: string; pc: number; mobile: number }[];
+  activityTimeline: { hour: string; pc: number; mobile: number; sleep: number }[];
   pcAppHistory: {
     all: { name: string; minutes: number }[];
     'Lenovo Yoga 7 Slim': { name: string; minutes: number }[];
@@ -149,14 +149,13 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
 
   // For past dates: try daily_summary first (raw metrics were deleted after summarization)
   if (!isToday) {
-    const { data: summary } = await supabase
-      .from('daily_summary')
-      .select('*')
-      .eq('date', resolvedDateStr)
-      .single();
+    const [{ data: summary }, { data: sleepRows }] = await Promise.all([
+      supabase.from('daily_summary').select('*').eq('date', resolvedDateStr).single(),
+      supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
+    ]);
 
     if (summary) {
-      return buildStatsFromSummary(summary);
+      return buildStatsFromSummary(summary, computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr));
     }
   }
 
@@ -168,9 +167,13 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const endIso = endUtc.toISOString();
 
   // Fetch Data — single query, filter in-memory
-  const { data: allMetrics } = await supabase.from('metrics').select('*')
-    .in('device_id', ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'oppo-5-lite', 'moon-reader'])
-    .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true });
+  const [{ data: allMetrics }, { data: sleepRows }] = await Promise.all([
+    supabase.from('metrics').select('*')
+      .in('device_id', ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'oppo-5-lite', 'moon-reader'])
+      .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true }),
+    supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
+  ]);
+  const sleepHourly = computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr);
 
   const pcData = (allMetrics || []).filter(r => ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio'].includes(r.device_id));
   const mobileData = (allMetrics || []).filter(r => r.device_id === 'oppo-5-lite');
@@ -179,7 +182,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   if (!allMetrics || allMetrics.length === 0) {
       return {
           pcTotalMinutes: 0, mobileTotalMinutes: 0, readingMinutes: 0, screenTimeMinutes: 0, simultaneousMinutes: 0, gamingMinutes: 0,
-          booksReadToday: [], activityTimeline: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
+          booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
+          activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
           pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
           locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0 },
           locationBreakdown: { pc: { office: 0, home: 0, outside: 0 }, mobile: { office: 0, home: 0, outside: 0 }, screenTime: { office: 0, home: 0, outside: 0 } },
@@ -428,7 +432,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     pcTotalMinutes: totalPcSeconds / 60, mobileTotalMinutes: totalMobileSeconds / 60, screenTimeMinutes: exactDedupMs / 1000 / 60, simultaneousMinutes: simultaneousMs / 1000 / 60, readingMinutes: totalReadingMinutes,
     gamingMinutes: totalGamingSeconds / 60, gamesPlayedToday: Array.from(gamesMap.entries()).map(([title, sec]) => ({ title, timeSpentSec: sec })).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
     booksReadToday: Array.from(booksFinalMap.values()).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
-    activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile })).sort((a, b) => a.hour.localeCompare(b.hour)),
+    activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile, sleep: sleepHourly[hour] || 0 })).sort((a, b) => a.hour.localeCompare(b.hour)),
     pcAppHistory: { all: toArray(pcAppsMapAll), 'Lenovo Yoga 7 Slim': toArray(pcAppsMapYoga), 'PC Escritorio': toArray(pcAppsMapDesktop) },
     topMobileApps: toArray(mobileAppsMap), recentEvents: unifiedEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 100),
     locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes },
@@ -437,7 +441,30 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   };
 }
 
-function buildStatsFromSummary(s: any): DashboardStats {
+function computeSleepHourlyMinutes(
+  sessions: { start_time: string; end_time: string }[],
+  resolvedDateStr: string
+): Record<string, number> {
+  const dayStartMs = fromZonedTime(parseISO(resolvedDateStr + 'T00:00:00'), TIMEZONE).getTime();
+  const result: Record<string, number> = {};
+  for (const s of sessions) {
+    if (!s.start_time || !s.end_time) continue;
+    const sessionStartMs = new Date(s.start_time).getTime();
+    const sessionEndMs = new Date(s.end_time).getTime();
+    for (let h = 0; h < 24; h++) {
+      const hourStartMs = dayStartMs + h * 3600000;
+      const overlapStart = Math.max(sessionStartMs, hourStartMs);
+      const overlapEnd = Math.min(sessionEndMs, hourStartMs + 3600000);
+      if (overlapEnd > overlapStart) {
+        const key = String(h).padStart(2, '0');
+        result[key] = (result[key] || 0) + Math.round((overlapEnd - overlapStart) / 60000);
+      }
+    }
+  }
+  return result;
+}
+
+function buildStatsFromSummary(s: any, sleepHourly: Record<string, number> = {}): DashboardStats {
   const toArray = (obj: Record<string, number> | null) =>
     Object.entries(obj || {}).map(([name, minutes]) => ({ name, minutes })).sort((a, b) => b.minutes - a.minutes);
 
@@ -475,7 +502,7 @@ function buildStatsFromSummary(s: any): DashboardStats {
         outside: (pcLoc.outside || 0) + (mobLoc.outside || 0),
       },
     },
-    activityTimeline: Array.from({ length: 24 }, (_, i) => ({ hour: `${String(i).padStart(2, '0')}:00`, pc: 0, mobile: 0 })),
+    activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
     recentEvents: [],
     lastPcStatus: null,
     lastMobileStatus: null,
