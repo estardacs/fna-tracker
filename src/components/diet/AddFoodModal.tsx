@@ -454,18 +454,23 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
   const saveAll = async () => {
     if (!suggestions) return;
     setSaving(true);
+    setError(null);
     try {
       for (const s of suggestions) {
         if (s.use_existing && s.matched_food) {
           // Use existing food item
-          await fetch('/api/diet/log', {
+          const logRes = await fetch('/api/diet/log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ date, meal, food_item_id: s.matched_food.id, grams_consumed: s.grams }),
           });
+          if (!logRes.ok) {
+            const logData = await logRes.json().catch(() => ({}));
+            throw new Error(logData.error ?? `Error al registrar "${s.name}"`);
+          }
         } else {
           // Create new food item (per-100g) + log
-          const res = await fetch('/api/diet/food-items', {
+          const foodRes = await fetch('/api/diet/food-items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -479,15 +484,24 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
               serving_size_g:    100,
             }),
           });
-          const { item } = await res.json();
-          await fetch('/api/diet/log', {
+          const foodData = await foodRes.json().catch(() => ({}));
+          if (!foodRes.ok || !foodData.item) {
+            throw new Error(foodData.error ?? `Error al guardar "${s.name}"`);
+          }
+          const logRes = await fetch('/api/diet/log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ date, meal, food_item_id: item.id, grams_consumed: s.grams }),
+            body: JSON.stringify({ date, meal, food_item_id: foodData.item.id, grams_consumed: s.grams }),
           });
+          if (!logRes.ok) {
+            const logData = await logRes.json().catch(() => ({}));
+            throw new Error(logData.error ?? `Error al registrar "${s.name}"`);
+          }
         }
       }
       onAdded();
+    } catch (e: any) {
+      setError(e.message ?? 'Error inesperado');
     } finally {
       setSaving(false);
     }
@@ -510,6 +524,7 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
             />
           ))}
         </div>
+        {error && <p className="text-xs text-red-400 text-center">{error}</p>}
         <button
           onClick={saveAll}
           disabled={saving}
@@ -700,12 +715,21 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [comboGrams, setComboGrams] = useState<Record<string, Record<string, number>>>({});
 
+  // Creation form state
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newItems, setNewItems] = useState<{ food: FoodItem; grams: number }[]>([]);
+  const [itemQ, setItemQ] = useState('');
+  const [itemResults, setItemResults] = useState<FoodItem[]>([]);
+  const [searchingItems, setSearchingItems] = useState(false);
+  const [savingCombo, setSavingCombo] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     fetch('/api/diet/combos')
       .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setCombos(data);
-      })
+      .then((data) => { if (Array.isArray(data)) setCombos(data); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -736,24 +760,238 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
     }
   };
 
+  // ---- Creation helpers ----
+  const handleItemSearchChange = (q: string) => {
+    setItemQ(q);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!q.trim()) { setItemResults([]); return; }
+    searchTimer.current = setTimeout(async () => {
+      setSearchingItems(true);
+      try {
+        const res = await fetch(`/api/diet/food-items?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        setItemResults(Array.isArray(data) ? data.slice(0, 6) : []);
+      } finally {
+        setSearchingItems(false);
+      }
+    }, 300);
+  };
+
+  const addItemToCombo = (food: FoodItem) => {
+    setNewItems((prev) => prev.find((i) => i.food.id === food.id) ? prev : [...prev, { food, grams: 100 }]);
+    setItemQ('');
+    setItemResults([]);
+  };
+
+  const removeItemFromCombo = (foodId: string) =>
+    setNewItems((prev) => prev.filter((i) => i.food.id !== foodId));
+
+  const updateItemGrams = (foodId: string, g: number) =>
+    setNewItems((prev) => prev.map((i) => i.food.id === foodId ? { ...i, grams: g } : i));
+
+  const resetCreation = () => {
+    setCreating(false);
+    setNewName('');
+    setNewItems([]);
+    setItemQ('');
+    setItemResults([]);
+    setCreateError(null);
+  };
+
+  const saveCombo = async (andLog: boolean) => {
+    if (!newName.trim() || newItems.length === 0) return;
+    setSavingCombo(true);
+    setCreateError(null);
+    try {
+      const comboRes = await fetch('/api/diet/combos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newName.trim(),
+          items: newItems.map((i) => ({ food_item_id: i.food.id, grams_consumed: i.grams })),
+        }),
+      });
+      const comboData = await comboRes.json().catch(() => ({}));
+      if (!comboRes.ok || !comboData.combo) throw new Error(comboData.error ?? 'Error al guardar combo');
+
+      if (andLog) {
+        const logRes = await fetch('/api/diet/combos/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            combo_id: comboData.combo.id,
+            date, meal,
+            items: newItems.map((i) => ({ food_item_id: i.food.id, grams_consumed: i.grams })),
+          }),
+        });
+        if (!logRes.ok) {
+          const ld = await logRes.json().catch(() => ({}));
+          throw new Error(ld.error ?? 'Error al registrar');
+        }
+        onAdded();
+      } else {
+        // Add to list locally so user sees it immediately
+        setCombos((prev) => [...prev, {
+          ...comboData.combo,
+          combo_items: newItems.map((i, idx) => ({
+            id: `tmp-${idx}`,
+            grams_consumed: i.grams,
+            food_items: { id: i.food.id, name: i.food.name, calories_per_100g: i.food.calories_per_100g, protein_per_100g: i.food.protein_per_100g, carbs_per_100g: i.food.carbs_per_100g, fat_per_100g: i.food.fat_per_100g },
+          })),
+        }]);
+        resetCreation();
+      }
+    } catch (e: any) {
+      setCreateError(e.message ?? 'Error inesperado');
+    } finally {
+      setSavingCombo(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 text-gray-600 animate-spin" /></div>;
   }
 
+  // ---- Creation form ----
+  if (creating) {
+    const totalKcal = newItems.reduce((s, i) => s + (i.food.calories_per_100g * i.grams / 100), 0);
+    const totalProt = newItems.reduce((s, i) => s + (i.food.protein_per_100g * i.grams / 100), 0);
+    const canSave = newName.trim().length > 0 && newItems.length > 0;
+
+    return (
+      <div className="space-y-3">
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <button onClick={resetCreation} className="text-gray-600 hover:text-gray-400 cursor-pointer text-xs transition-colors">←</button>
+          <span className="text-sm font-medium text-gray-300">Nuevo combo</span>
+        </div>
+
+        {/* Name */}
+        <input
+          type="text"
+          placeholder="Nombre del combo (ej: Súper Tupper)"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
+        />
+
+        {/* Item search */}
+        <div className="relative">
+          <div className="relative flex items-center">
+            {searchingItems
+              ? <Loader2 className="absolute left-3 w-3.5 h-3.5 text-gray-500 animate-spin" />
+              : <Search className="absolute left-3 w-3.5 h-3.5 text-gray-600" />}
+            <input
+              type="text"
+              placeholder="Buscar alimento para agregar..."
+              value={itemQ}
+              onChange={(e) => handleItemSearchChange(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          {itemResults.length > 0 && (
+            <div className="absolute top-full mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg z-10 overflow-hidden shadow-xl">
+              {itemResults.map((food) => (
+                <button
+                  key={food.id}
+                  onClick={() => addItemToCombo(food)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-800 cursor-pointer transition-colors"
+                >
+                  <span className="text-sm text-gray-200 truncate">{food.name}</span>
+                  <span className="text-[10px] text-gray-500 font-mono shrink-0 ml-2">{food.calories_per_100g} kcal/100g</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Items list */}
+        {newItems.length > 0 && (
+          <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+            {newItems.map((item) => (
+              <div key={item.food.id} className="flex items-center gap-2 bg-gray-900/60 border border-gray-800 rounded-lg px-3 py-2">
+                <span className="flex-1 text-xs text-gray-200 truncate">{item.food.name}</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={item.grams}
+                  onChange={(e) => updateItemGrams(item.food.id, Number(e.target.value) || 1)}
+                  className="w-14 bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-blue-500 font-mono"
+                />
+                <span className="text-[10px] text-gray-600">g</span>
+                <span className="text-[10px] text-gray-500 font-mono w-12 text-right">
+                  {(item.food.calories_per_100g * item.grams / 100).toFixed(0)} kcal
+                </span>
+                <button onClick={() => removeItemFromCombo(item.food.id)} className="text-gray-700 hover:text-red-400 cursor-pointer transition-colors">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Total preview */}
+        {newItems.length > 0 && (
+          <div className="flex items-center gap-3 px-3 py-2 bg-gray-900/30 border border-gray-800/50 rounded-lg">
+            <span className="text-xs text-gray-500">Total:</span>
+            <span className="text-sm font-mono text-gray-200">{Math.round(totalKcal)} kcal</span>
+            <span className="text-xs text-gray-600 font-mono">{totalProt.toFixed(1)}g prot</span>
+          </div>
+        )}
+
+        {createError && <p className="text-xs text-red-400">{createError}</p>}
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={() => saveCombo(false)}
+            disabled={savingCombo || !canSave}
+            className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 rounded-lg py-2 text-xs font-medium transition-colors cursor-pointer"
+          >
+            {savingCombo ? <Loader2 className="animate-spin mx-auto w-4 h-4" /> : 'Solo guardar'}
+          </button>
+          <button
+            onClick={() => saveCombo(true)}
+            disabled={savingCombo || !canSave}
+            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg py-2 text-xs font-medium transition-colors cursor-pointer"
+          >
+            {savingCombo ? <Loader2 className="animate-spin mx-auto w-4 h-4" /> : 'Guardar y registrar'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Empty state ----
   if (combos.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500 text-sm space-y-2">
+      <div className="text-center py-8 text-gray-500 text-sm space-y-3">
         <Package2 className="w-8 h-8 mx-auto text-gray-700" />
         <p>Aún no tienes combos guardados.</p>
         <p className="text-xs text-gray-600">
           Los combos (tappers, desayunos habituales) permiten<br />registrar varios alimentos de una vez.
         </p>
+        <button
+          onClick={() => setCreating(true)}
+          className="mx-auto flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-2 rounded-lg cursor-pointer transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" /> Crear primer combo
+        </button>
       </div>
     );
   }
 
+  // ---- Combo list ----
   return (
     <div className="space-y-2">
+      <div className="flex justify-end">
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 cursor-pointer transition-colors"
+        >
+          <Plus className="w-3 h-3" /> Nuevo combo
+        </button>
+      </div>
       {combos.map((combo) => {
         const isOpen = expandedId === combo.id;
         const totalKcal = combo.combo_items.reduce((sum, ci) => {
@@ -783,7 +1021,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
                   {logging === combo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                   Agregar
                 </button>
-                {isOpen ? <ChevronUp className="w-4 h-4 text-gray-600" /> : <ChevronDown className="w-4 h-4 text-gray-600" />}
+                <ChevronDown className={cn('w-4 h-4 text-gray-600 transition-transform duration-200', isOpen && 'rotate-180')} />
               </div>
             </div>
 
@@ -794,27 +1032,27 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
               )}
             >
               <div className="overflow-hidden">
-              <div className="border-t border-gray-800/40 px-4 py-3 space-y-2">
-                {combo.combo_items.map((ci) => {
-                  const g = getGrams(combo.id, ci.id, ci.grams_consumed);
-                  const kcal = (ci.food_items.calories_per_100g * g / 100).toFixed(0);
-                  return (
-                    <div key={ci.id} className="flex items-center gap-3">
-                      <span className="text-xs text-gray-300 flex-1 truncate">{ci.food_items.name}</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={g}
-                        onChange={(e) => setGrams(combo.id, ci.id, Number(e.target.value) || ci.grams_consumed)}
-                        className="w-14 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-blue-500 font-mono"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <span className="text-[10px] text-gray-600">g</span>
-                      <span className="text-[10px] text-gray-500 font-mono w-14 text-right">{kcal} kcal</span>
-                    </div>
-                  );
-                })}
-              </div>
+                <div className="border-t border-gray-800/40 px-4 py-3 space-y-2">
+                  {combo.combo_items.map((ci) => {
+                    const g = getGrams(combo.id, ci.id, ci.grams_consumed);
+                    const kcal = (ci.food_items.calories_per_100g * g / 100).toFixed(0);
+                    return (
+                      <div key={ci.id} className="flex items-center gap-3">
+                        <span className="text-xs text-gray-300 flex-1 truncate">{ci.food_items.name}</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={g}
+                          onChange={(e) => setGrams(combo.id, ci.id, Number(e.target.value) || ci.grams_consumed)}
+                          className="w-14 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-blue-500 font-mono"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <span className="text-[10px] text-gray-600">g</span>
+                        <span className="text-[10px] text-gray-500 font-mono w-14 text-right">{kcal} kcal</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
