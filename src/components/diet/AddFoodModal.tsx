@@ -268,13 +268,27 @@ function CreateFoodForm({ meal, date, initialName = '', onAdded, onBack }: { mea
 }
 
 // ---- Scan Tab ----
+interface SuggestionItem {
+  name: string;
+  brand?: string | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number;
+  sodium_mg: number;
+  sugar_g: number;
+  serving_size_g?: number | null;
+  serving_label?: string | null;
+}
+
 function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded: () => void }) {
   const [text, setText] = useState('');
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [suggestion, setSuggestion] = useState<any | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [suggestions, setSuggestions] = useState<SuggestionItem[] | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -287,7 +301,8 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
 
   const scan = async () => {
     setScanning(true);
-    setSuggestion(null);
+    setSuggestions(null);
+    setError(null);
     try {
       const res = await fetch('/api/diet/scan', {
         method: 'POST',
@@ -299,74 +314,95 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
         ),
       });
       const data = await res.json();
-      if (data.suggestion) setSuggestion(data.suggestion);
+      if (!res.ok || data.error) {
+        setError(data.error ?? `Error ${res.status}`);
+        return;
+      }
+      if (data.suggestions?.length > 0) {
+        setSuggestions(data.suggestions);
+      } else {
+        setError('No se encontraron alimentos en la descripción.');
+      }
+    } catch (e: any) {
+      setError(e.message ?? 'Error de red');
     } finally {
       setScanning(false);
     }
   };
 
-  const saveAndLog = async () => {
-    if (!suggestion) return;
+  const updateSuggestion = (idx: number, key: string, val: string) => {
+    setSuggestions((prev) => prev
+      ? prev.map((s, i) => i === idx ? { ...s, [key]: key === 'name' || key === 'brand' || key === 'serving_label' ? val : parseFloat(val) || 0 } : s)
+      : prev
+    );
+  };
+
+  const saveAll = async () => {
+    if (!suggestions) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/diet/food-items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(suggestion),
-      });
-      const { item } = await res.json();
-      await fetch('/api/diet/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, meal, food_item_id: item.id, quantity }),
-      });
+      for (const s of suggestions) {
+        const res = await fetch('/api/diet/food-items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...s, serving_size_g: s.serving_size_g ?? null, serving_label: s.serving_label ?? null, brand: s.brand ?? null }),
+        });
+        const { item } = await res.json();
+        await fetch('/api/diet/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, meal, food_item_id: item.id, quantity: 1 }),
+        });
+      }
       onAdded();
     } finally {
       setSaving(false);
     }
   };
 
-  if (suggestion) {
-    const set = (k: string, v: string) => setSuggestion((s: any) => ({ ...s, [k]: v }));
-    const field = (k: string, label: string, type = 'number') => (
-      <div>
-        <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">{label}</label>
-        <input
-          type={type}
-          value={suggestion[k] ?? ''}
-          onChange={(e) => set(k, e.target.value)}
-          className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-        />
-      </div>
-    );
-
+  if (suggestions) {
     return (
       <div className="space-y-4">
-        <p className="text-xs text-green-400">Sugerencia del asistente — revisa y ajusta si es necesario:</p>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="col-span-2">{field('name', 'Nombre', 'text')}</div>
-          <div className="col-span-2">{field('brand', 'Marca', 'text')}</div>
-          {field('calories', 'Calorías (kcal)')}
-          {field('protein_g', 'Proteína (g)')}
-          {field('carbs_g', 'Carbos (g)')}
-          {field('fat_g', 'Grasas (g)')}
-        </div>
-        <div>
-          <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">Porciones a registrar</label>
-          <input
-            type="number" min="0.1" step="0.1" value={quantity}
-            onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-            className="w-24 bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-          />
+        <p className="text-xs text-green-400">
+          {suggestions.length === 1 ? '1 alimento detectado' : `${suggestions.length} alimentos detectados`} — revisa y ajusta si es necesario:
+        </p>
+        <div className="space-y-4 max-h-[45vh] overflow-y-auto pr-1">
+          {suggestions.map((s, idx) => (
+            <div key={idx} className="bg-gray-900 border border-gray-700 rounded-lg p-3 space-y-2">
+              <input
+                type="text"
+                value={s.name}
+                onChange={(e) => updateSuggestion(idx, 'name', e.target.value)}
+                className="w-full bg-transparent border-b border-gray-700 pb-1 text-sm font-medium text-white focus:outline-none focus:border-blue-500"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                {(['calories', 'protein_g', 'carbs_g', 'fat_g'] as const).map((k) => (
+                  <div key={k}>
+                    <label className="text-[10px] text-gray-600 block">{k === 'calories' ? 'Kcal' : k === 'protein_g' ? 'Proteína g' : k === 'carbs_g' ? 'Carbos g' : 'Grasa g'}</label>
+                    <input
+                      type="number"
+                      value={s[k]}
+                      onChange={(e) => updateSuggestion(idx, k, e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
         <button
-          onClick={saveAndLog}
+          onClick={saveAll}
           disabled={saving}
           className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer"
         >
-          {saving ? <Loader2 className="animate-spin mx-auto w-4 h-4" /> : 'Guardar y registrar'}
+          {saving
+            ? <Loader2 className="animate-spin mx-auto w-4 h-4" />
+            : suggestions.length === 1 ? 'Guardar y registrar' : `Guardar y registrar ${suggestions.length} alimentos`}
         </button>
-        <button onClick={() => setSuggestion(null)} className="w-full text-xs text-gray-500 hover:text-gray-300 cursor-pointer">Volver a escanear</button>
+        <button onClick={() => { setSuggestions(null); setError(null); }} className="w-full text-xs text-gray-500 hover:text-gray-300 cursor-pointer">
+          Volver a escanear
+        </button>
       </div>
     );
   }
@@ -374,13 +410,16 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
   return (
     <div className="space-y-4">
       <div>
-        <label className="text-xs text-gray-400 block mb-1">Descripción de texto</label>
+        <label className="text-xs text-gray-400 block mb-1">
+          Describe lo que comiste <span className="text-gray-600">(puedes incluir varios alimentos)</span>
+        </label>
         <textarea
-          placeholder="Ej: 100g de pechuga de pollo a la plancha, 1 plato de arroz..."
+          placeholder="Ej: 92gr de hallulla, 64gr de huevo, 96gr de durazno"
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={3}
           className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+          autoFocus
         />
       </div>
 
@@ -397,16 +436,26 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
           className="flex items-center gap-2 text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-600 rounded-lg px-3 py-2 transition-colors cursor-pointer w-full"
         >
           <Camera className="w-4 h-4" />
-          {imageB64 ? 'Imagen cargada ✓' : 'Subir foto de etiqueta nutricional'}
+          {imageB64 ? '✓ Imagen cargada' : 'Subir foto de etiqueta nutricional'}
         </button>
       </div>
+
+      {error && (
+        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
 
       <button
         onClick={scan}
         disabled={scanning || (!text.trim() && !imageB64)}
         className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer"
       >
-        {scanning ? <Loader2 className="animate-spin mx-auto w-4 h-4" /> : 'Analizar con IA'}
+        {scanning ? (
+          <span className="flex items-center justify-center gap-2">
+            <Loader2 className="animate-spin w-4 h-4" /> Analizando...
+          </span>
+        ) : 'Analizar con IA'}
       </button>
     </div>
   );
