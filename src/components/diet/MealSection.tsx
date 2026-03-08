@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, Loader2 } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { ChevronDown, Plus, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DietLogEntry } from '@/lib/diet-processor';
 import AddFoodModal from './AddFoodModal';
@@ -19,6 +19,70 @@ interface MealSectionProps {
   entries: DietLogEntry[];
   date: string;
   onRefresh: () => void;
+}
+
+// Inline grams editor — click the grams badge to edit
+function GramsBadge({ entry, onSaved }: { entry: DietLogEntry; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(entry.grams_consumed ?? ''));
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const open = () => {
+    setValue(String(entry.grams_consumed ?? ''));
+    setEditing(true);
+    setTimeout(() => { inputRef.current?.select(); }, 0);
+  };
+
+  const commit = async () => {
+    const grams = parseFloat(value.replace(',', '.'));
+    if (!grams || grams <= 0 || grams === entry.grams_consumed) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await fetch(`/api/diet/log/${entry.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grams_consumed: grams }),
+      });
+      onSaved();
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  };
+
+  if (saving) {
+    return <Loader2 className="w-3 h-3 animate-spin text-gray-600" />;
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+        className="w-14 bg-gray-800 border border-blue-500 rounded px-1.5 py-0.5 text-[10px] text-white font-mono text-center focus:outline-none"
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={open}
+      title="Editar cantidad"
+      className="text-[10px] text-gray-600 font-mono hover:text-gray-300 hover:bg-gray-800 px-1 py-0.5 rounded transition-colors cursor-pointer"
+    >
+      {entry.grams_consumed}g
+    </button>
+  );
 }
 
 export default function MealSection({ meal, entries, date, onRefresh }: MealSectionProps) {
@@ -71,7 +135,7 @@ export default function MealSection({ meal, entries, date, onRefresh }: MealSect
           </div>
         </div>
 
-        {/* Collapsible body — grid trick for smooth height animation */}
+        {/* Collapsible body */}
         <div
           className={cn(
             'grid transition-[grid-template-rows] duration-300 ease-in-out',
@@ -96,9 +160,9 @@ export default function MealSection({ meal, entries, date, onRefresh }: MealSect
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-200 truncate">{entry.name}</div>
-                        <div className="flex gap-2 mt-0.5 flex-wrap">
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           {entry.grams_consumed != null && (
-                            <span className="text-[10px] text-gray-600 font-mono">{entry.grams_consumed}g</span>
+                            <GramsBadge entry={entry} onSaved={onRefresh} />
                           )}
                           <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">
                             P {entry.protein_g.toFixed(1)}g

@@ -4,25 +4,46 @@ import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-// Phase 1: Parse the user description into a list of {name, grams}
+// Phase 1: Parse the user description into a list of {name, grams, ...macros?}
 const PHASE1_SYSTEM = `Eres un asistente de nutrición. El usuario describe lo que comió o preparó.
-Extrae cada alimento mencionado y su cantidad en gramos PARA UNA SOLA PORCIÓN/UNIDAD.
+Extrae cada alimento y su cantidad en gramos PARA UNA SOLA PORCIÓN/UNIDAD.
 Responde ÚNICAMENTE con un JSON array válido (sin texto antes ni después):
 [
-  { "name": "nombre del alimento sin cantidades", "grams": número_en_gramos }
+  {
+    "name": "Nombre Del Alimento",
+    "grams": número_en_gramos,
+    "calories_per_100g": número_o_null,
+    "protein_per_100g": número_o_null,
+    "carbs_per_100g": número_o_null,
+    "fat_per_100g": número_o_null,
+    "fiber_per_100g": número_o_null,
+    "sodium_per_100g": número_o_null
+  }
 ]
-REGLAS:
-- CRÍTICO: Si el usuario dice "hice 4 de estos", "preparé 3 tappers", "tengo 6 porciones" etc.,
-  extrae SOLO las cantidades de UNA unidad/porción. Ignora el multiplicador completamente.
-  Ejemplo: "hice 4 tappers con 400g fideos" → { "fideos": 100 } (400 / 4 = 100g por tapper)
-- El campo "name" es SOLO el nombre del alimento, NUNCA incluye cantidades, pesos ni descripciones
-  MAL: "hallulla (92g)", "pechuga (125g)", "fideos integrales 200g", "arroz cocido (1 taza)"
-  BIEN: "hallulla", "pechuga de pollo", "fideos integrales", "arroz cocido"
-- Convierte medidas caseras a gramos: 1 taza ≈ 240g, 1 cucharada ≈ 15g, 1 huevo ≈ 55g, 1/4 pechuga ≈ 125g
-- Si no se menciona cantidad, estima una porción típica en gramos
-- Para "1 paquete" usa el peso estándar del paquete (ej: salsa Arrabbiata ≈ 340g)
-- Para recetas caseras (queque, torta, etc.) reporta el peso del trozo/porción consumida
-- Devuelve siempre un array, aunque sea un solo alimento`;
+
+REGLA CRÍTICA — ETIQUETAS NUTRICIONALES:
+Si el usuario proporciona datos nutricionales del producto (kcal, proteína, carbos, grasa, etc.),
+usa EXACTAMENTE esos valores. Conviértelos a por-100g si vienen por porción.
+Ejemplo: "Avena Quaker. Por 40g: 150kcal, 5g prot, 27g carb, 3g grasa"
+→ calories_per_100g: 375, protein_per_100g: 12.5, carbs_per_100g: 67.5, fat_per_100g: 7.5
+Si NO hay datos nutricionales en el texto, pon null en todos los campos macro (se estimarán después).
+
+REGLAS SOBRE RECETAS CASERAS:
+- Si el usuario describe una RECETA (lista de ingredientes para hacer un plato — queque, torta, guiso, etc.),
+  extrae UN SOLO ITEM con el nombre del plato final y los gramos TOTALES sumando TODOS los ingredientes.
+  Pon null en los macros (Phase 2 los estimará para el producto final).
+  Ejemplo: "queque de plátano: 3 huevos, 3 plátanos, ½ taza azúcar, 2 tazas harina, ½ taza leche, vainilla"
+  → [{ "name": "Queque de Plátano Casero", "grams": 900, "calories_per_100g": null, ... }]
+- Si el usuario describe ALIMENTOS SEPARADOS que comió juntos, extrae cada uno.
+
+REGLAS GENERALES:
+- Si el usuario dice "hice 4 de estos", "preparé 3 tappers" etc., extrae SOLO UNA porción.
+  Ejemplo: "hice 4 tappers con 400g fideos" → grams: 100 (400/4)
+- "name" usa Title Case, NUNCA incluye cantidades ni pesos.
+  MAL: "hallulla (92g)", "fideos 200g" — BIEN: "Hallulla", "Fideos Integrales"
+- Convierte medidas caseras: 1 taza ≈ 240g, 1 cucharada ≈ 15g, 1 huevo ≈ 55g
+- Si no se menciona cantidad, estima una porción típica
+- Devuelve siempre un array`;
 
 // Phase 2: Estimate macros per 100g for items not found in DB
 const PHASE2_SYSTEM = `Eres un nutricionista experto en alimentos chilenos e internacionales.
@@ -41,7 +62,9 @@ Responde ÚNICAMENTE con un JSON array (sin texto antes ni después):
 ]
 REGLAS:
 - Valores para alimentos chilenos (hallulla, marraqueta, sopaipilla, charquicán, etc.) usando datos locales
-- Para recetas caseras, estima el valor promedio del producto final
+- Para RECETAS CASERAS (queque, torta, guiso, etc.): estima los macros del producto FINAL horneado/cocido por 100g.
+  Ten en cuenta que hornear concentra nutrientes (pierde humedad) y los ingredientes se mezclan.
+  Ejemplo "Queque de Plátano Casero" → estima kcal, proteína, carbos, grasas por 100g del queque ya horneado.
 - Redondea a 1 decimal`;
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -70,9 +93,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // ---- Phase 1: Parse description ----
-    let parsedItems: { name: string; grams: number }[];
-
     if (type === 'image') {
       // For images, use single-phase: parse + estimate in one call
       const userPrompt = extraText
@@ -113,18 +133,35 @@ Responde ÚNICAMENTE con un JSON array (sin texto antes ni después):
       });
     }
 
-    // Text: Phase 1 — parse into [{name, grams}]
+    // Text: Phase 1 — parse into [{name, grams, ...macros?}]
+    type P1Item = {
+      name: string; grams: number;
+      calories_per_100g: number | null; protein_per_100g: number | null;
+      carbs_per_100g: number | null;    fat_per_100g: number | null;
+      fiber_per_100g: number | null;    sodium_per_100g: number | null;
+    };
+    let parsedItems: P1Item[];
+
     const phase1 = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 512,
+      max_tokens: 768,
       system: PHASE1_SYSTEM,
       messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
     });
 
     try {
       const p1text = phase1.content.find((b) => b.type === 'text')?.text ?? '';
-      parsedItems = parseJSON(p1text) as { name: string; grams: number }[];
-      if (!Array.isArray(parsedItems)) parsedItems = [parsedItems as any];
+      const raw = parseJSON(p1text) as any[];
+      parsedItems = (Array.isArray(raw) ? raw : [raw]).map((r: any) => ({
+        name:              r.name,
+        grams:             Number(r.grams) || 100,
+        calories_per_100g: r.calories_per_100g != null ? Number(r.calories_per_100g) : null,
+        protein_per_100g:  r.protein_per_100g  != null ? Number(r.protein_per_100g)  : null,
+        carbs_per_100g:    r.carbs_per_100g    != null ? Number(r.carbs_per_100g)    : null,
+        fat_per_100g:      r.fat_per_100g      != null ? Number(r.fat_per_100g)      : null,
+        fiber_per_100g:    r.fiber_per_100g    != null ? Number(r.fiber_per_100g)    : null,
+        sodium_per_100g:   r.sodium_per_100g   != null ? Number(r.sodium_per_100g)   : null,
+      }));
     } catch {
       return NextResponse.json({ error: 'No se pudo interpretar la descripción. Intenta ser más específico.' }, { status: 502 });
     }
@@ -133,27 +170,31 @@ Responde ÚNICAMENTE con un JSON array (sin texto antes ni después):
       return NextResponse.json({ error: 'No se detectaron alimentos en la descripción.' }, { status: 422 });
     }
 
-    // ---- DB matching for each item ----
+    // ---- DB matching for each item (skip if user already provided full nutrition) ----
+    const hasNutrition = (item: P1Item) => item.calories_per_100g != null && item.protein_per_100g != null;
+
     const matchResults = await Promise.all(
       parsedItems.map(async (item) => {
+        // If user provided nutrition data, don't override with DB match
+        if (hasNutrition(item)) return { item, match: null };
         const { data } = await supabase.rpc('search_food_items', { q: item.name, lim: 1 });
         const match = (data as any[])?.[0] ?? null;
         return { item, match: match && match.similarity_score > 0.35 ? match : null };
       })
     );
 
-    // ---- Phase 2: Estimate macros for unmatched items ----
-    const unmatched = matchResults.filter((r) => !r.match).map((r) => r.item);
+    // ---- Phase 2: Estimate macros only for items with no nutrition data and no DB match ----
+    const needEstimate = matchResults.filter((r) => !r.match && !hasNutrition(r.item));
     let estimatedMap: Record<string, any> = {};
 
-    if (unmatched.length > 0) {
+    if (needEstimate.length > 0) {
       const phase2 = await client.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 768,
         system: PHASE2_SYSTEM,
         messages: [{
           role: 'user',
-          content: [{ type: 'text', text: JSON.stringify(unmatched.map((u) => u.name)) }],
+          content: [{ type: 'text', text: JSON.stringify(needEstimate.map((r) => r.item.name)) }],
         }],
       });
 
@@ -164,12 +205,13 @@ Responde ÚNICAMENTE con un JSON array (sin texto antes ni después):
           estimatedMap[e.name?.toLowerCase() ?? ''] = e;
         }
       } catch {
-        // If phase 2 fails, we'll show items without pre-filled macros
+        // Phase 2 failed: items will show with 0 macros, user can edit
       }
     }
 
     // ---- Build suggestions ----
     const suggestions = matchResults.map(({ item, match }) => {
+      // Priority 1: DB match (unless user provided nutrition — don't override)
       if (match) {
         return {
           name:      match.name,
@@ -180,15 +222,26 @@ Responde ÚNICAMENTE con un JSON array (sin texto antes ni después):
           fat_per_100g:      Number(match.fat_per_100g),
           fiber_per_100g:    Number(match.fiber_per_100g ?? 0),
           sodium_per_100g:   Number(match.sodium_per_100g ?? 0),
-          matched_food: {
-            id:            match.id,
-            name:          match.name,
-            similarity:    match.similarity_score,
-          },
+          matched_food: { id: match.id, name: match.name, similarity: match.similarity_score },
         };
       }
 
-      // Not matched: use estimated per-100g
+      // Priority 2: User provided nutrition in their message — use verbatim
+      if (hasNutrition(item)) {
+        return {
+          name:      item.name,
+          grams:     item.grams,
+          calories_per_100g: item.calories_per_100g!,
+          protein_per_100g:  item.protein_per_100g!,
+          carbs_per_100g:    item.carbs_per_100g  ?? 0,
+          fat_per_100g:      item.fat_per_100g    ?? 0,
+          fiber_per_100g:    item.fiber_per_100g  ?? 0,
+          sodium_per_100g:   item.sodium_per_100g ?? 0,
+          matched_food: null,
+        };
+      }
+
+      // Priority 3: AI estimate
       const est = estimatedMap[item.name.toLowerCase()] ?? {};
       return {
         name:      item.name,

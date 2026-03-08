@@ -96,7 +96,7 @@ function MacroRow({ food, grams }: { food: FoodItem; grams: number }) {
 }
 
 // ---- Grams input ----
-function GramsInput({ value, onChange, hint }: { value: number; onChange: (g: number) => void; hint?: string }) {
+function GramsInput({ value, onChange, hint, loadingHint }: { value: number; onChange: (g: number) => void; hint?: string; loadingHint?: boolean }) {
   return (
     <div className="space-y-2">
       <label className="text-xs text-gray-400">Cantidad</label>
@@ -126,7 +126,12 @@ function GramsInput({ value, onChange, hint }: { value: number; onChange: (g: nu
           ))}
         </div>
       </div>
-      {hint && (
+      {loadingHint && (
+        <p className="flex items-center gap-1.5 text-[11px] text-gray-600">
+          <Loader2 className="w-3 h-3 animate-spin" /> Calculando porciones típicas...
+        </p>
+      )}
+      {!loadingHint && hint && (
         <p className="text-[11px] text-gray-500 leading-relaxed">
           📏 {hint}
         </p>
@@ -147,6 +152,9 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
   const [loading, setLoading] = useState(false);
   const [logging, setLogging] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [servingHint, setServingHint] = useState<string | null>(null);
+  const [loadingHint, setLoadingHint] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/diet/food-items?recientes=1')
@@ -155,8 +163,37 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
       .catch(() => {});
   }, []);
 
+  // When item is selected, fetch serving hint if not stored
+  useEffect(() => {
+    if (!selected) { setServingHint(null); return; }
+    if (selected.serving_label) { setServingHint(selected.serving_label); return; }
+    setServingHint(null);
+    setLoadingHint(true);
+    fetch(`/api/diet/food-items/serving-hint?name=${encodeURIComponent(selected.name)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.hint) {
+          setServingHint(data.hint);
+          // Save to DB so next time it's already there
+          fetch(`/api/diet/food-items/${selected.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ serving_label: data.hint }),
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingHint(false));
+  }, [selected]);
+
   const deleteFood = async (id: string) => {
-    await fetch(`/api/diet/food-items/${id}`, { method: 'DELETE' });
+    setDeleteError(null);
+    const res = await fetch(`/api/diet/food-items/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setDeleteError(d.error ?? 'No se pudo eliminar el alimento');
+      return;
+    }
     setRecientes((prev) => prev.filter((f) => f.id !== id));
     setResults((prev) => prev.filter((f) => f.id !== id));
   };
@@ -213,7 +250,7 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
           </div>
         </div>
 
-        <GramsInput value={grams} onChange={setGrams} hint={selected.serving_label ?? undefined} />
+        <GramsInput value={grams} onChange={setGrams} hint={servingHint ?? undefined} loadingHint={loadingHint} />
         <MacroRow food={selected} grams={grams} />
 
         <button
@@ -244,6 +281,12 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
         />
         {loading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 animate-spin" />}
       </div>
+
+      {deleteError && (
+        <p className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          {deleteError}
+        </p>
+      )}
 
       {/* Recientes */}
       {showRecientes && (
@@ -339,8 +382,25 @@ function CreateFoodForm({
   });
   const [grams, setGrams] = useState(100);
   const [saving, setSaving] = useState(false);
+  const [loadingHint, setLoadingHint] = useState(false);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleNameChange = (v: string) => {
+    set('name', v);
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    if (v.trim().length < 3) return;
+    hintTimer.current = setTimeout(async () => {
+      setLoadingHint(true);
+      try {
+        const res = await fetch(`/api/diet/food-items/serving-hint?name=${encodeURIComponent(v.trim())}`);
+        const data = await res.json();
+        if (data.hint) set('serving_label', data.hint);
+      } catch { /* ignore */ }
+      finally { setLoadingHint(false); }
+    }, 700);
+  };
 
   const save = async () => {
     if (!form.name || !form.calories_per_100g) return;
@@ -406,7 +466,15 @@ function CreateFoodForm({
       </button>
       <p className="text-xs text-gray-500">Los valores nutricionales van por 100g</p>
       <div className="grid grid-cols-2 gap-2">
-        <div className="col-span-2">{textField('name', 'Nombre')}</div>
+        <div className="col-span-2">
+          <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">Nombre</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => handleNameChange(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+          />
+        </div>
         <div className="col-span-2">{textField('brand', 'Marca (opcional)')}</div>
         {numField('calories_per_100g', 'Calorías / 100g')}
         {numField('protein_per_100g',  'Proteína / 100g')}
@@ -417,6 +485,7 @@ function CreateFoodForm({
         <div className="col-span-2">
           <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">
             Referencia de porciones <span className="normal-case text-gray-600">(opcional)</span>
+            {loadingHint && <Loader2 className="inline w-3 h-3 animate-spin ml-1 text-gray-600" />}
           </label>
           <input
             type="text"
@@ -428,7 +497,7 @@ function CreateFoodForm({
           <p className="text-[10px] text-gray-700 mt-0.5">Aparece como guía cuando agregas este alimento</p>
         </div>
       </div>
-      <GramsInput value={grams} onChange={setGrams} />
+      <GramsInput value={grams} onChange={setGrams} hint={form.serving_label || undefined} loadingHint={loadingHint} />
       <button
         onClick={save}
         disabled={saving || !form.name || !form.calories_per_100g}
@@ -500,7 +569,10 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
 
   const updateField = (idx: number, key: string, val: string | number) => {
     setSuggestions((prev) =>
-      prev ? prev.map((s, i) => i === idx ? { ...s, [key]: typeof val === 'string' ? parseFloat(val) || 0 : val } : s) : prev
+      prev ? prev.map((s, i) => i === idx ? {
+        ...s,
+        [key]: key === 'name' ? val : (typeof val === 'string' ? parseFloat(val) || 0 : val),
+      } : s) : prev
     );
   };
 
@@ -740,6 +812,26 @@ function ScanItemCard({
   onToggleExisting: () => void;
 }) {
   const [expanded, setExpanded] = useState(!s.matched_food);
+  const [servingHint, setServingHint] = useState<string | null>(null);
+  const [loadingHint, setLoadingHint] = useState(false);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch hint when name settles (debounced)
+  useEffect(() => {
+    const name = s.use_existing ? (s.matched_food?.name ?? s.name) : s.name;
+    if (!name || name.length < 3) { setServingHint(null); return; }
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    hintTimer.current = setTimeout(async () => {
+      setLoadingHint(true);
+      try {
+        const res = await fetch(`/api/diet/food-items/serving-hint?name=${encodeURIComponent(name)}`);
+        const data = await res.json();
+        setServingHint(data.hint ?? null);
+      } catch { setServingHint(null); }
+      finally { setLoadingHint(false); }
+    }, 600);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.name, s.use_existing]);
 
   const activeMacros: FoodItem = {
     id: '', name: s.name,
@@ -780,45 +872,52 @@ function ScanItemCard({
               </button>
             )}
           </div>
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              value={s.name}
-              onChange={(e) => onFieldChange('name', e.target.value)}
-              placeholder="Nombre del alimento..."
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
-            />
-          </div>
+          <input
+            type="text"
+            value={s.name}
+            onChange={(e) => onFieldChange('name', e.target.value)}
+            placeholder="Nombre del alimento..."
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
+          />
         </div>
       )}
 
-      {/* Grams */}
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={s.grams}
-          onChange={(e) => onGramsChange(Number(e.target.value) || 0)}
-          className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-blue-500 font-mono"
-        />
-        <span className="text-[10px] text-gray-500">g</span>
-        <div className="flex gap-1">
-          {QUICK_GRAMS.map((g) => (
-            <button
-              key={g}
-              onClick={() => onGramsChange(g)}
-              className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer',
-                s.grams === g
-                  ? 'bg-blue-600/30 border-blue-600 text-blue-400'
-                  : 'bg-transparent border-gray-700 text-gray-600 hover:text-gray-400'
-              )}
-            >
-              {g}
-            </button>
-          ))}
+      {/* Grams + hint */}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={s.grams || ''}
+            onChange={(e) => onGramsChange(Number(e.target.value.replace(',', '.')) || 0)}
+            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-blue-500 font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          <span className="text-[10px] text-gray-500">g</span>
+          <div className="flex gap-1">
+            {QUICK_GRAMS.map((g) => (
+              <button
+                key={g}
+                onClick={() => onGramsChange(g)}
+                className={cn(
+                  'text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer',
+                  s.grams === g
+                    ? 'bg-blue-600/30 border-blue-600 text-blue-400'
+                    : 'bg-transparent border-gray-700 text-gray-600 hover:text-gray-400'
+                )}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
         </div>
+        {loadingHint && (
+          <p className="flex items-center gap-1.5 text-[11px] text-gray-600">
+            <Loader2 className="w-3 h-3 animate-spin" /> Calculando porciones típicas...
+          </p>
+        )}
+        {!loadingHint && servingHint && (
+          <p className="text-[11px] text-gray-500 leading-relaxed">📏 {servingHint}</p>
+        )}
       </div>
 
       {/* Macros */}

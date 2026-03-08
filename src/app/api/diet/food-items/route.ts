@@ -70,6 +70,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'name y calories_per_100g son requeridos' }, { status: 400 });
   }
 
+  // Title-case: capitalize first letter of each word
+  const titleCased = name.replace(/\S+/g, (w: string) => w.charAt(0).toUpperCase() + w.slice(1));
+
   const c100 = Number(calories_per_100g);
   const p100 = Number(protein_per_100g ?? 0);
   const ch100 = Number(carbs_per_100g ?? 0);
@@ -79,12 +82,12 @@ export async function POST(req: NextRequest) {
   const su100 = Number(sugar_per_100g);
 
   // name_normalized: strip "(Xg)" suffixes, lowercase
-  const name_normalized = name.replace(/\s*\(\s*\d+\.?\d*\s*g\s*\)/gi, '').trim().toLowerCase();
+  const name_normalized = titleCased.replace(/\s*\(\s*\d+\.?\d*\s*g\s*\)/gi, '').trim().toLowerCase();
 
   const { data, error } = await supabase
     .from('food_items')
     .insert({
-      name,
+      name: titleCased,
       brand: brand || null,
       name_normalized,
       // Per-100g columns (source of truth)
