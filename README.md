@@ -27,10 +27,14 @@ Dashboard personal de hábitos diarios. Agrega métricas de múltiples dispositi
 Vista principal del día. Muestra KPIs de tiempo de pantalla, sueño, lectura y juegos, gráfico de actividad por hora, historial de apps, ubicación, sección de salud y registro de dieta. Se actualiza automáticamente cada 30 segundos (polling del servidor).
 
 ### Dieta (`/diet`)
-Registro nutricional del día dividido en 5 comidas (desayuno, almuerzo, once, cena, snack). Incluye anillo de calorías, barras de macros y secciones colapsables por comida. Para agregar alimentos:
-- **Buscar** — librería personal con búsqueda fuzzy (pg_trgm), muestra recientes
-- **Escanear** — descripción en texto o foto de etiqueta → IA en dos fases (parsea cantidades, estima macros por 100g, busca coincidencias en la librería antes de crear duplicados)
-- **Combos** — tappers o desayunos habituales que registran varios alimentos de una vez
+Registro nutricional del día dividido en 5 comidas (desayuno, almuerzo, once, cena, snack). Incluye anillo de calorías (meta editable), barras de macros (proteína, carbos, grasa) y fibra/sodio como stats secundarias. Secciones colapsables por comida. Para agregar alimentos:
+
+- **Buscar** — librería personal con búsqueda fuzzy (pg_trgm), ordenada por frecuencia de uso
+- **Escanear texto** — describe en lenguaje natural lo que comiste; IA con `claude-sonnet-4-6` en dos fases: (1) parsea nombres y gramos, busca coincidencias en la librería (evita duplicados), (2) estima macros por 100g solo para items sin match. Si el texto ya incluye datos de etiqueta, los usa directamente sin estimación
+- **Escanear foto** — foto de etiqueta nutricional → IA extrae macros en una sola llamada
+- **Combos** — grupos de alimentos predefinidos (tappers, desayunos habituales) que registran varios items de una vez, ordenados por frecuencia de uso
+
+Al seleccionar un alimento, `claude-haiku-4-5` sugiere el peso típico de una unidad ("1 hallulla ≈ 90g", "1 huevo mediano ≈ 55g", etc.).
 
 Los alimentos se almacenan normalizados por 100g; al registrar se especifican los gramos consumidos.
 
@@ -43,7 +47,7 @@ Resumen semanal, mensual y anual usando la tabla `daily_summary`. Incluye totale
 
 - **Frontend** — Next.js 15 App Router, React Server Components + Client Islands, Tailwind CSS v4
 - **Backend** — Supabase (PostgreSQL + Realtime + Edge Functions)
-- **IA** — Anthropic claude-sonnet-4-6 para escaneo de alimentos en dos fases
+- **IA** — `claude-sonnet-4-6` para escaneo de alimentos (texto e imagen); `claude-haiku-4-5` para sugerencias de porciones
 - **Timezone** — America/Santiago (CLST) en toda la lógica de fechas
 - **Deploy** — Vercel + Supabase Edge Functions (la resumificación se dispara al cargar `/history`; cron nocturno opcional vía Supabase Cron)
 
