@@ -96,18 +96,17 @@ function MacroRow({ food, grams }: { food: FoodItem; grams: number }) {
 }
 
 // ---- Grams input ----
-function GramsInput({ value, onChange }: { value: number; onChange: (g: number) => void }) {
+function GramsInput({ value, onChange, hint }: { value: number; onChange: (g: number) => void; hint?: string }) {
   return (
     <div className="space-y-2">
       <label className="text-xs text-gray-400">Cantidad</label>
       <div className="flex items-center gap-2">
         <input
-          type="number"
-          min="1"
-          step="1"
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value) || 0)}
-          className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-blue-500 font-mono"
+          type="text"
+          inputMode="decimal"
+          value={value || ''}
+          onChange={(e) => onChange(Number(e.target.value.replace(',', '.')) || 0)}
+          className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-blue-500 font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
         <span className="text-xs text-gray-500">g</span>
         <div className="flex gap-1 flex-wrap">
@@ -127,6 +126,11 @@ function GramsInput({ value, onChange }: { value: number; onChange: (g: number) 
           ))}
         </div>
       </div>
+      {hint && (
+        <p className="text-[11px] text-gray-500 leading-relaxed">
+          📏 {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -209,7 +213,7 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
           </div>
         </div>
 
-        <GramsInput value={grams} onChange={setGrams} />
+        <GramsInput value={grams} onChange={setGrams} hint={selected.serving_label ?? undefined} />
         <MacroRow food={selected} grams={grams} />
 
         <button
@@ -370,14 +374,27 @@ function CreateFoodForm({
     }
   };
 
-  const field = (k: string, label: string, type = 'number') => (
+  const textField = (k: string, label: string) => (
     <div>
       <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">{label}</label>
       <input
-        type={type}
+        type="text"
         value={(form as any)[k]}
         onChange={(e) => set(k, e.target.value)}
         className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+      />
+    </div>
+  );
+
+  const numField = (k: string, label: string) => (
+    <div>
+      <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">{label}</label>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={(form as any)[k]}
+        onChange={(e) => set(k, e.target.value)}
+        className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
     </div>
   );
@@ -389,14 +406,27 @@ function CreateFoodForm({
       </button>
       <p className="text-xs text-gray-500">Los valores nutricionales van por 100g</p>
       <div className="grid grid-cols-2 gap-2">
-        <div className="col-span-2">{field('name', 'Nombre', 'text')}</div>
-        <div className="col-span-2">{field('brand', 'Marca (opcional)', 'text')}</div>
-        {field('calories_per_100g', 'Calorías / 100g')}
-        {field('protein_per_100g',  'Proteína / 100g')}
-        {field('carbs_per_100g',    'Carbos / 100g')}
-        {field('fat_per_100g',      'Grasas / 100g')}
-        {field('fiber_per_100g',    'Fibra / 100g')}
-        {field('sodium_per_100g',   'Sodio mg / 100g')}
+        <div className="col-span-2">{textField('name', 'Nombre')}</div>
+        <div className="col-span-2">{textField('brand', 'Marca (opcional)')}</div>
+        {numField('calories_per_100g', 'Calorías / 100g')}
+        {numField('protein_per_100g',  'Proteína / 100g')}
+        {numField('carbs_per_100g',    'Carbos / 100g')}
+        {numField('fat_per_100g',      'Grasas / 100g')}
+        {numField('fiber_per_100g',    'Fibra / 100g')}
+        {numField('sodium_per_100g',   'Sodio mg / 100g')}
+        <div className="col-span-2">
+          <label className="text-[10px] text-gray-500 uppercase tracking-wide block mb-0.5">
+            Referencia de porciones <span className="normal-case text-gray-600">(opcional)</span>
+          </label>
+          <input
+            type="text"
+            placeholder="ej: 1 unidad ≈ 180g · ½ palta ≈ 90g · 1 lata ≈ 160g"
+            value={form.serving_label}
+            onChange={(e) => set('serving_label', e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
+          />
+          <p className="text-[10px] text-gray-700 mt-0.5">Aparece como guía cuando agregas este alimento</p>
+        </div>
       </div>
       <GramsInput value={grams} onChange={setGrams} />
       <button
