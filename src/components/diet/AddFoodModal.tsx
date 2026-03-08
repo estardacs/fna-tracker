@@ -151,6 +151,12 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
       .catch(() => {});
   }, []);
 
+  const deleteFood = async (id: string) => {
+    await fetch(`/api/diet/food-items/${id}`, { method: 'DELETE' });
+    setRecientes((prev) => prev.filter((f) => f.id !== id));
+    setResults((prev) => prev.filter((f) => f.id !== id));
+  };
+
   const search = useCallback(async (q: string) => {
     if (!q.trim()) { setResults([]); return; }
     setLoading(true);
@@ -241,7 +247,7 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
           <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-1.5">Recientes</p>
           <ul className="space-y-1">
             {recientes.map((item) => (
-              <FoodRow key={item.id} item={item} onSelect={() => setSelected(item)} />
+              <FoodRow key={item.id} item={item} onSelect={() => setSelected(item)} onDelete={deleteFood} />
             ))}
           </ul>
         </div>
@@ -251,7 +257,7 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
       {displayList.length > 0 && (
         <ul className="space-y-1 max-h-48 overflow-y-auto">
           {displayList.map((item) => (
-            <FoodRow key={item.id} item={item} onSelect={() => setSelected(item)} />
+            <FoodRow key={item.id} item={item} onSelect={() => setSelected(item)} onDelete={deleteFood} />
           ))}
         </ul>
       )}
@@ -278,19 +284,40 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
   );
 }
 
-function FoodRow({ item, onSelect }: { item: FoodItem; onSelect: () => void }) {
+function FoodRow({ item, onSelect, onDelete }: { item: FoodItem; onSelect: () => void; onDelete?: (id: string) => void }) {
+  const [confirming, setConfirming] = useState(false);
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirming) { setConfirming(true); return; }
+    onDelete?.(item.id);
+  };
+
   return (
-    <li
-      onClick={onSelect}
-      className="flex justify-between items-center px-3 py-2.5 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors"
-    >
-      <div className="min-w-0">
+    <li className="group/row flex justify-between items-center px-3 py-2.5 rounded-lg hover:bg-gray-800 transition-colors">
+      <div className="min-w-0 flex-1 cursor-pointer" onClick={onSelect}>
         <div className="text-sm text-white truncate">{item.name}</div>
         {item.brand && <div className="text-[10px] text-gray-500">{item.brand}</div>}
       </div>
-      <span className="text-xs text-gray-500 font-mono ml-3 shrink-0">
-        {item.calories_per_100g?.toFixed(0) ?? '—'} kcal/100g
-      </span>
+      <div className="flex items-center gap-2 shrink-0 ml-3">
+        <span className="text-xs text-gray-500 font-mono">
+          {item.calories_per_100g?.toFixed(0) ?? '—'} kcal/100g
+        </span>
+        {onDelete && (
+          <button
+            onClick={handleDelete}
+            onBlur={() => setConfirming(false)}
+            className={cn(
+              'text-[10px] px-1.5 py-0.5 rounded transition-colors cursor-pointer opacity-0 group-hover/row:opacity-100',
+              confirming
+                ? 'bg-red-500/20 border border-red-600 text-red-400'
+                : 'text-gray-600 hover:text-red-400'
+            )}
+          >
+            {confirming ? '¿Borrar?' : <X className="w-3 h-3" />}
+          </button>
+        )}
+      </div>
     </li>
   );
 }
@@ -801,6 +828,30 @@ function ScanItemCard({
   );
 }
 
+function DeleteComboButton({ onDelete }: { onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  return confirming ? (
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={onDelete}
+        className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 border border-red-600 text-red-400 cursor-pointer"
+      >
+        ¿Borrar?
+      </button>
+      <button onClick={() => setConfirming(false)} className="text-gray-600 hover:text-gray-400 cursor-pointer">
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  ) : (
+    <button
+      onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
+      className="text-gray-700 hover:text-red-400 cursor-pointer transition-colors"
+    >
+      <X className="w-3.5 h-3.5" />
+    </button>
+  );
+}
+
 // ============================================================
 // COMBOS TAB
 // ============================================================
@@ -837,6 +888,11 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
       ...prev,
       [comboId]: { ...(prev[comboId] ?? {}), [itemId]: g },
     }));
+
+  const deleteCombo = async (id: string) => {
+    await fetch(`/api/diet/combos/${id}`, { method: 'DELETE' });
+    setCombos((prev) => prev.filter((c) => c.id !== id));
+  };
 
   const logCombo = async (combo: Combo) => {
     setLogging(combo.id);
@@ -1154,6 +1210,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
                   {logging === combo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                   Agregar
                 </button>
+                <DeleteComboButton onDelete={() => deleteCombo(combo.id)} />
                 <ChevronDown className={cn('w-4 h-4 text-gray-600 transition-transform duration-200', isOpen && 'rotate-180')} />
               </div>
             </div>
