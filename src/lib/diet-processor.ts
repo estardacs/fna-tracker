@@ -143,6 +143,22 @@ export async function searchFoodItems(query: string): Promise<FoodItem[]> {
   }));
 }
 
+/** Returns a Map<dateStr, totalCalories> for the given date range.
+ *  Used by history-processor so both views read calories identically. */
+export async function getDietCaloriesForRange(startIso: string, endIso: string): Promise<Map<string, number>> {
+  const { data } = await supabase
+    .from('diet_log')
+    .select('date, calories')
+    .gte('date', startIso)
+    .lte('date', endIso);
+
+  const map = new Map<string, number>();
+  for (const row of (data || []) as any[]) {
+    map.set(row.date, (map.get(row.date) ?? 0) + Number(row.calories));
+  }
+  return map;
+}
+
 export async function getGoal(): Promise<DietGoal> {
   const { data } = await supabase.from('diet_goals').select('*').eq('id', 1).single();
   return data

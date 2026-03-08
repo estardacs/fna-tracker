@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { unstable_noStore as noStore } from 'next/cache';
+import { getDietCaloriesForRange } from '@/lib/diet-processor';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, format, parseISO, addDays } from 'date-fns';
 
 export type PeriodType = 'weekly' | 'monthly' | 'yearly';
@@ -77,11 +78,11 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
   const startIso  = format(startDate, 'yyyy-MM-dd');
   const endIso    = format(endDate,   'yyyy-MM-dd');
 
-  const [screenRes, metricsRes, sleepRes, dietRes] = await Promise.all([
+  const [screenRes, metricsRes, sleepRes, caloriesForRange] = await Promise.all([
     supabase.from('daily_summary').select('*').gte('date', startIso).lte('date', endIso).order('date', { ascending: true }),
     supabase.from('health_daily_metrics').select('date, step_count').gte('date', startIso).lte('date', endIso),
     supabase.from('health_sleep_sessions').select('date, duration_minutes').gte('date', startIso).lte('date', endIso).gte('duration_minutes', 60),
-    supabase.from('diet_log').select('date, calories').gte('date', startIso).lte('date', endIso),
+    getDietCaloriesForRange(startIso, endIso),
   ]);
 
   if (screenRes.error) {
@@ -97,52 +98,62 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
     if ((s.duration_minutes || 0) > prev) sleepMap.set(s.date, s.duration_minutes);
   }
 
-  // Build diet calorie lookup per date
-  const caloriesMap = new Map<string, number>();
-  for (const d of (dietRes.data || []) as any[]) {
-    caloriesMap.set(d.date, (caloriesMap.get(d.date) ?? 0) + Number(d.calories));
-  }
+  // Calorie lookup already built by getDietCaloriesForRange (same logic as diet page)
+  const caloriesMap = caloriesForRange;
 
   const aggApps: Record<string, number> = {};
   const aggGames: Record<string, number> = {};
   const aggBooks: Record<string, number> = {};
 
-  const items: HistoryItem[] = (screenRes.data || []).map((row: any) => {
-    mergeSummaries(aggApps, row.pc_app_summary);
-    mergeSummaries(aggApps, row.mobile_app_summary);
-    mergeSummaries(aggGames, row.games_summary);
-    mergeSummaries(aggBooks, row.books_summary);
+  // Build a map of screen rows keyed by date for quick lookup
+  const screenRowMap = new Map<string, any>((screenRes.data || []).map((r: any) => [r.date, r]));
+
+  // Union of dates: all dates that have screen time OR diet entries
+  const allDates = new Set<string>([
+    ...(screenRes.data || []).map((r: any) => r.date as string),
+    ...Array.from(caloriesMap.keys()),
+  ]);
+  const sortedDates = Array.from(allDates).sort();
+
+  const items: HistoryItem[] = sortedDates.map((date) => {
+    const row = screenRowMap.get(date);
+    if (row) {
+      mergeSummaries(aggApps, row.pc_app_summary);
+      mergeSummaries(aggApps, row.mobile_app_summary);
+      mergeSummaries(aggGames, row.games_summary);
+      mergeSummaries(aggBooks, row.books_summary);
+    }
 
     const localApps: { name: string; minutes: number }[] = [];
-    if (row.pc_app_summary) Object.entries(row.pc_app_summary).forEach(([k, v]) => localApps.push({ name: k, minutes: Number(v) }));
-    if (row.mobile_app_summary) Object.entries(row.mobile_app_summary).forEach(([k, v]) => localApps.push({ name: k, minutes: Number(v) }));
+    if (row?.pc_app_summary) Object.entries(row.pc_app_summary).forEach(([k, v]) => localApps.push({ name: k, minutes: Number(v) }));
+    if (row?.mobile_app_summary) Object.entries(row.mobile_app_summary).forEach(([k, v]) => localApps.push({ name: k, minutes: Number(v) }));
 
     return {
-      label: row.date,
-      dateKey: row.date,
-      totalScreenTime: row.screentime_minutes || 0,
-      pcMinutes: row.pc_total_minutes || 0,
-      mobileMinutes: row.mobile_total_minutes || 0,
-      readingMinutes: row.reading_minutes || 0,
-      gamingMinutes: row.gaming_minutes || 0,
+      label: date,
+      dateKey: date,
+      totalScreenTime: row?.screentime_minutes || 0,
+      pcMinutes: row?.pc_total_minutes || 0,
+      mobileMinutes: row?.mobile_total_minutes || 0,
+      readingMinutes: row?.reading_minutes || 0,
+      gamingMinutes: row?.gaming_minutes || 0,
       topApps: localApps.sort((a, b) => b.minutes - a.minutes).slice(0, 3),
-      sleepMinutes: sleepMap.get(row.date) ?? 0,
-      steps: stepsMap.get(row.date) ?? 0,
-      calories: caloriesMap.get(row.date) ?? 0,
+      sleepMinutes: sleepMap.get(date) ?? 0,
+      steps: stepsMap.get(date) ?? 0,
+      calories: caloriesMap.get(date) ?? 0,
     };
   });
 
-  const totals = items.reduce((acc, item, i) => {
-    const row = (screenRes.data || [])[i];
+  const totals = items.reduce((acc, item) => {
+    const row = screenRowMap.get(item.dateKey);
     return {
       screenTime: acc.screenTime + item.totalScreenTime,
       pc: acc.pc + item.pcMinutes,
       mobile: acc.mobile + item.mobileMinutes,
       reading: acc.reading + item.readingMinutes,
       gaming: acc.gaming + item.gamingMinutes,
-      office: acc.office + (row.office_minutes || 0),
-      home:   acc.home   + (row.home_minutes   || 0),
-      outside: acc.outside + (row.outside_minutes || 0),
+      office: acc.office + (row?.office_minutes || 0),
+      home:   acc.home   + (row?.home_minutes   || 0),
+      outside: acc.outside + (row?.outside_minutes || 0),
       totalSleepMinutes: acc.totalSleepMinutes + item.sleepMinutes,
       totalSteps: acc.totalSteps + item.steps,
       totalCalories: acc.totalCalories + item.calories,
@@ -173,11 +184,11 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
 
   const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0 };
 
-  const [{ data, error }, { data: stepsData }, { data: sleepData }, { data: dietData }] = await Promise.all([
+  const [{ data, error }, { data: stepsData }, { data: sleepData }, caloriesMapY] = await Promise.all([
     supabase.from('daily_summary').select('*').gte('date', startIso).lte('date', endIso).order('date', { ascending: true }),
     supabase.from('health_daily_metrics').select('date, step_count').gte('date', startIso).lte('date', endIso),
     supabase.from('health_sleep_sessions').select('date, duration_minutes').gte('date', startIso).lte('date', endIso).gte('duration_minutes', 60),
-    supabase.from('diet_log').select('date, calories').gte('date', startIso).lte('date', endIso),
+    getDietCaloriesForRange(startIso, endIso),
   ]);
 
   if (error) {
@@ -190,11 +201,6 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
   for (const s of (sleepData || []) as any[]) {
     const prev = sleepMapY.get(s.date) ?? 0;
     if ((s.duration_minutes || 0) > prev) sleepMapY.set(s.date, s.duration_minutes);
-  }
-
-  const caloriesMapY = new Map<string, number>();
-  for (const d of (dietData || []) as any[]) {
-    caloriesMapY.set(d.date, (caloriesMapY.get(d.date) ?? 0) + Number(d.calories));
   }
 
   // Group daily rows by week (Monday)

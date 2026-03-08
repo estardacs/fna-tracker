@@ -89,11 +89,12 @@ function DateNavigator({ currentPeriod, anchorDate }: { currentPeriod: PeriodTyp
     );
 }
 
-function SummaryStat({ label, value, colorClass }: { label: string, value: string, colorClass: string }) {
+function SummaryStat({ label, value, colorClass, sub }: { label: string, value: string, colorClass: string, sub?: string }) {
     return (
         <div className="bg-gray-900/30 border border-gray-800/50 p-3 md:p-4 rounded-lg flex flex-col items-center justify-center text-center">
             <span className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</span>
             <span className={cn("text-lg md:text-2xl font-bold font-mono", colorClass)}>{value}</span>
+            {sub && <span className="text-[10px] text-gray-600 font-mono mt-1">{sub}</span>}
         </div>
     );
 }
@@ -199,33 +200,48 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
       </div>
 
       {/* Totals Summary Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 mb-4">
-        <SummaryStat label="Tiempo Total" value={formatMinutes(totals.screenTime)} colorClass="text-white" />
-        <SummaryStat label="PC" value={formatMinutes(totals.pc)} colorClass="text-blue-400" />
-        <SummaryStat label="Móvil" value={formatMinutes(totals.mobile)} colorClass="text-purple-400" />
-        <SummaryStat label="Lectura" value={formatMinutes(totals.reading)} colorClass="text-green-400" />
-        <SummaryStat label="Juego" value={formatMinutes(totals.gaming)} colorClass="text-indigo-400" />
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 mb-8">
-        {totals.totalSleepMinutes > 0 && (
-          <SummaryStat label="Sueño total" value={formatMinutes(totals.totalSleepMinutes)} colorClass="text-indigo-300" />
-        )}
-        {totals.avgSleepMinutes > 0 && (
-          <SummaryStat label={period === 'yearly' ? 'Sueño prom/sem' : 'Sueño prom/noche'} value={formatMinutes(totals.avgSleepMinutes)} colorClass="text-indigo-400" />
-        )}
-        {totals.totalSteps > 0 && (
-          <SummaryStat label="Pasos totales" value={totals.totalSteps >= 1000 ? `${(totals.totalSteps / 1000).toFixed(0)}k` : `${totals.totalSteps}`} colorClass="text-emerald-400" />
-        )}
-        {totals.totalCalories > 0 && (
-          <SummaryStat label="Calorías totales" value={`${totals.totalCalories.toFixed(0)} kcal`} colorClass="text-orange-400" />
-        )}
-        {totals.avgCalories > 0 && (
-          <SummaryStat label={period === 'yearly' ? 'Kcal prom/sem' : 'Kcal prom/día'} value={`${totals.avgCalories} kcal`} colorClass="text-amber-400" />
-        )}
-        <SummaryStat label="En Casa" value={formatMinutes(totals.home)} colorClass="text-emerald-400" />
-        <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
-        <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
-      </div>
+      {(() => {
+        const pl = period === 'yearly' ? '/sem' : '/día';
+        const dST  = items.filter(i => i.totalScreenTime > 0).length || 1;
+        const dPC  = items.filter(i => i.pcMinutes > 0).length || 1;
+        const dMob = items.filter(i => i.mobileMinutes > 0).length || 1;
+        const dRd  = items.filter(i => i.readingMinutes > 0).length || 1;
+        const dGm  = items.filter(i => i.gamingMinutes > 0).length || 1;
+        const dSl  = items.filter(i => i.sleepMinutes > 0).length || 1;
+        const dCal = items.filter(i => i.calories > 0).length || 1;
+        return (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 mb-4">
+              <SummaryStat label="Tiempo Total" value={formatMinutes(totals.screenTime)} colorClass="text-white"
+                sub={`~${formatMinutes(Math.round(totals.screenTime / dST))}${pl}`} />
+              <SummaryStat label="PC" value={formatMinutes(totals.pc)} colorClass="text-blue-400"
+                sub={totals.pc > 0 ? `~${formatMinutes(Math.round(totals.pc / dPC))}${pl}` : undefined} />
+              <SummaryStat label="Móvil" value={formatMinutes(totals.mobile)} colorClass="text-purple-400"
+                sub={totals.mobile > 0 ? `~${formatMinutes(Math.round(totals.mobile / dMob))}${pl}` : undefined} />
+              <SummaryStat label="Lectura" value={formatMinutes(totals.reading)} colorClass="text-green-400"
+                sub={totals.reading > 0 ? `~${formatMinutes(Math.round(totals.reading / dRd))}${pl}` : undefined} />
+              <SummaryStat label="Juego" value={formatMinutes(totals.gaming)} colorClass="text-indigo-400"
+                sub={totals.gaming > 0 ? `~${formatMinutes(Math.round(totals.gaming / dGm))}${pl}` : undefined} />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 mb-8">
+              {totals.totalSleepMinutes > 0 && (
+                <SummaryStat label="Sueño" value={formatMinutes(totals.totalSleepMinutes)} colorClass="text-indigo-300"
+                  sub={`~${formatMinutes(Math.round(totals.totalSleepMinutes / dSl))}${period === 'yearly' ? '/sem' : '/noche'}`} />
+              )}
+              {totals.totalCalories > 0 && (
+                <SummaryStat label="Calorías" value={`${totals.totalCalories.toFixed(0)} kcal`} colorClass="text-orange-400"
+                  sub={`~${Math.round(totals.totalCalories / dCal)} kcal${pl}`} />
+              )}
+              {totals.totalSteps > 0 && (
+                <SummaryStat label="Pasos" value={totals.totalSteps >= 1000 ? `${(totals.totalSteps / 1000).toFixed(0)}k` : `${totals.totalSteps}`} colorClass="text-emerald-400" />
+              )}
+              <SummaryStat label="En Casa" value={formatMinutes(totals.home)} colorClass="text-emerald-400" />
+              <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
+              <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
+            </div>
+          </>
+        );
+      })()}
 
       {/* Chart */}
       <div className="h-[250px] md:h-[350px] bg-gray-900/30 border border-gray-800 rounded-xl p-2 md:p-4 mb-8 relative">
