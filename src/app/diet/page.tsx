@@ -3,7 +3,10 @@ import Link from 'next/link';
 import { getDietDayStats } from '@/lib/diet-processor';
 import DietContent from '@/components/diet/DietContent';
 import { format } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 import { es } from 'date-fns/locale';
+
+const TIMEZONE = 'America/Santiago';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,7 +76,7 @@ export default async function DietPage({
 
   const displayDate = targetDate
     ? format(new Date(targetDate + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })
-    : format(new Date(), "EEEE d 'de' MMMM", { locale: es });
+    : format(toZonedTime(new Date(), TIMEZONE), "EEEE d 'de' MMMM", { locale: es });
 
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">

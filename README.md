@@ -24,7 +24,7 @@ Dashboard personal de hábitos diarios. Agrega métricas de múltiples dispositi
 ## Vistas
 
 ### Dashboard (`/`)
-Vista principal del día. Muestra KPIs de tiempo de pantalla, sueño, lectura y juegos, gráfico de actividad por hora, historial de apps, ubicación, sección de salud y registro de dieta. Se actualiza automáticamente vía Supabase Realtime (fallback: polling cada 5 min).
+Vista principal del día. Muestra KPIs de tiempo de pantalla, sueño, lectura y juegos, gráfico de actividad por hora, historial de apps, ubicación, sección de salud y registro de dieta. Se actualiza automáticamente cada 30 segundos (polling del servidor).
 
 ### Dieta (`/diet`)
 Registro nutricional del día dividido en 5 comidas (desayuno, almuerzo, once, cena, snack). Incluye anillo de calorías, barras de macros y secciones colapsables por comida. Para agregar alimentos:
@@ -45,7 +45,7 @@ Resumen semanal, mensual y anual usando la tabla `daily_summary`. Incluye totale
 - **Backend** — Supabase (PostgreSQL + Realtime + Edge Functions)
 - **IA** — Anthropic claude-sonnet-4-6 para escaneo de alimentos en dos fases
 - **Timezone** — America/Santiago (CLST) en toda la lógica de fechas
-- **Deploy** — Vercel + GitHub Actions (cron diario 03:00 Chile para resumir métricas)
+- **Deploy** — Vercel + Supabase Edge Functions (la resumificación se dispara al cargar `/history`; cron nocturno opcional vía Supabase Cron)
 
 ---
 
@@ -66,7 +66,7 @@ Los datos llegan desde distintos dispositivos automáticamente:
 ```
 Dispositivos → metrics (raw) → [dashboard en vivo]
                      ↓
-              summarize-daily (Edge Function, cron 03:00)
+              summarize-daily (Edge Function, on /history load + cron opcional)
                      ↓
               daily_summary → [historial semanal/mensual/anual]
               (métricas raw se eliminan tras resumir)

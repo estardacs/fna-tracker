@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { unstable_noStore as noStore } from 'next/cache';
+import { toZonedTime } from 'date-fns-tz';
+import { format } from 'date-fns';
+
+const TIMEZONE = 'America/Santiago';
 
 export interface DietGoal {
   calories: number;
@@ -60,7 +64,7 @@ const MEAL_ORDER = ['desayuno', 'almuerzo', 'once', 'cena', 'snack'];
 export async function getDietDayStats(dateStr?: string): Promise<DietDayStats> {
   noStore();
 
-  const date = dateStr ?? new Date().toISOString().slice(0, 10);
+  const date = dateStr ?? format(toZonedTime(new Date(), TIMEZONE), 'yyyy-MM-dd');
 
   const [logRes, goalRes] = await Promise.all([
     supabase
