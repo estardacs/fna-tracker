@@ -15,7 +15,9 @@ REGLAS:
 - CRÍTICO: Si el usuario dice "hice 4 de estos", "preparé 3 tappers", "tengo 6 porciones" etc.,
   extrae SOLO las cantidades de UNA unidad/porción. Ignora el multiplicador completamente.
   Ejemplo: "hice 4 tappers con 400g fideos" → { "fideos": 100 } (400 / 4 = 100g por tapper)
-- "hallulla" no es "hallulla (92g)" — omite el peso del nombre
+- El campo "name" es SOLO el nombre del alimento, NUNCA incluye cantidades, pesos ni descripciones
+  MAL: "hallulla (92g)", "pechuga (125g)", "fideos integrales 200g", "arroz cocido (1 taza)"
+  BIEN: "hallulla", "pechuga de pollo", "fideos integrales", "arroz cocido"
 - Convierte medidas caseras a gramos: 1 taza ≈ 240g, 1 cucharada ≈ 15g, 1 huevo ≈ 55g, 1/4 pechuga ≈ 125g
 - Si no se menciona cantidad, estima una porción típica en gramos
 - Para "1 paquete" usa el peso estándar del paquete (ej: salsa Arrabbiata ≈ 340g)

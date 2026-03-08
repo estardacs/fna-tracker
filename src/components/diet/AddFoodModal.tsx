@@ -694,29 +694,46 @@ function ScanItemCard({
 
   return (
     <div className="bg-gray-900 border border-gray-700/80 rounded-lg p-3 space-y-2.5">
-      {/* Name + match badge */}
-      <div className="flex items-start justify-between gap-2">
-        <input
-          type="text"
-          value={s.name}
-          onChange={(e) => onFieldChange('name', e.target.value)}
-          className="flex-1 bg-transparent border-b border-gray-700 pb-0.5 text-sm font-medium text-white focus:outline-none focus:border-blue-500"
-        />
-        {s.matched_food && (
+      {/* Name */}
+      {s.use_existing && s.matched_food ? (
+        /* Using existing item — show name as static, non-editable */
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium text-white truncate">{s.matched_food.name}</span>
           <button
             onClick={onToggleExisting}
-            className={cn(
-              'shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors',
-              s.use_existing
-                ? 'border-green-600 text-green-400 bg-green-500/10'
-                : 'border-gray-600 text-gray-500 bg-transparent hover:border-gray-500'
-            )}
+            className="shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors border-green-600 text-green-400 bg-green-500/10"
           >
             <Check className="w-3 h-3" />
-            {s.use_existing ? `Usando "${s.matched_food.name}"` : 'Usar existente'}
+            Existente
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        /* New item — name is editable */
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-[10px] text-gray-500 uppercase tracking-wide">
+              Nombre — así quedará guardado
+            </label>
+            {s.matched_food && (
+              <button
+                onClick={onToggleExisting}
+                className="shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors border-gray-600 text-gray-500 bg-transparent hover:border-gray-500"
+              >
+                Usar existente
+              </button>
+            )}
+          </div>
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              value={s.name}
+              onChange={(e) => onFieldChange('name', e.target.value)}
+              placeholder="Nombre del alimento..."
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Grams */}
       <div className="flex items-center gap-2">
