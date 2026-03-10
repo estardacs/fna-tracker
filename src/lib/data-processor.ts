@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { startOfDay, endOfDay, format, parseISO, startOfWeek, addDays } from 'date-fns';
+import { startOfDay, endOfDay, format, parseISO, startOfWeek, addDays, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 
@@ -34,7 +34,7 @@ export type DashboardStats = {
   mobileTotalMinutes: number;
   readingMinutes: number;
   booksReadToday: { title: string; percent: number; timeSpentSec: number }[];
-  activityTimeline: { hour: string; pc: number; mobile: number }[];
+  activityTimeline: { hour: string; pc: number; mobile: number; sleep: number }[];
   pcAppHistory: {
     all: { name: string; minutes: number }[];
     'Lenovo Yoga 7 Slim': { name: string; minutes: number }[];
@@ -64,6 +64,7 @@ export type DashboardStats = {
     screenTime: { office: number; home: number; outside: number };
   };
   simultaneousMinutes: number;
+  sleepMinutes: number;
 };
 
 export type WeeklyDayStat = {
@@ -71,36 +72,69 @@ export type WeeklyDayStat = {
   dayName: string;
   totalMinutes: number;
   primaryDevice: 'pc' | 'mobile' | 'balanced';
+  sleepMinutes: number;
 };
 
 export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
-  const days: WeeklyDayStat[] = [];
   const now = new Date();
   const zonedNow = toZonedTime(now, TIMEZONE);
+  const todayStr = format(zonedNow, 'yyyy-MM-dd');
   const startOfCurrentWeek = startOfWeek(zonedNow, { weekStartsOn: 1 });
-  
-  for (let i = 0; i < 7; i++) {
-    const targetDate = addDays(startOfCurrentWeek, i);
-    const dateStr = format(targetDate, 'yyyy-MM-dd');
-    let stats = { screenTimeMinutes: 0, pcTotalMinutes: 0, mobileTotalMinutes: 0 };
-    
-    if (targetDate <= zonedNow) {
-       stats = await getDailyStats(dateStr);
+
+  // Build the 7 date strings for this week
+  const weekDates = Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(startOfCurrentWeek, i);
+    return { date: format(d, 'yyyy-MM-dd'), dayName: format(d, 'EEEE', { locale: es }), isFuture: d > zonedNow };
+  });
+
+  // Fetch past days from daily_summary in one query (more reliable than raw metrics)
+  const pastDateStrs = weekDates.filter(d => d.date < todayStr).map(d => d.date);
+  const allPastAndToday = weekDates.filter(d => !d.isFuture).map(d => d.date);
+
+  const [{ data: summaryRows }, { data: sleepRows }] = await Promise.all([
+    pastDateStrs.length > 0
+      ? supabase.from('daily_summary').select('date, screentime_minutes, pc_total_minutes, mobile_total_minutes').in('date', pastDateStrs)
+      : Promise.resolve({ data: [] }),
+    allPastAndToday.length > 0
+      ? supabase.from('health_sleep_sessions').select('date, duration_minutes').in('date', allPastAndToday).gte('duration_minutes', 60)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const summaryMap = new Map((summaryRows || []).map((r: any) => [r.date, r]));
+  // For sleep: take the longest session per date (main sleep)
+  const sleepMap = new Map<string, number>();
+  for (const s of (sleepRows || []) as any[]) {
+    const prev = sleepMap.get(s.date) ?? 0;
+    if ((s.duration_minutes || 0) > prev) sleepMap.set(s.date, s.duration_minutes);
+  }
+
+  // Today's stats come from live raw metrics
+  const todayStats = await getDailyStats(todayStr);
+
+  return weekDates.map(({ date, dayName, isFuture }) => {
+    let screenTimeMinutes = 0, pcTotalMinutes = 0, mobileTotalMinutes = 0;
+
+    if (isFuture) {
+      // future days: zero
+    } else if (date === todayStr) {
+      screenTimeMinutes = todayStats.screenTimeMinutes;
+      pcTotalMinutes    = todayStats.pcTotalMinutes;
+      mobileTotalMinutes = todayStats.mobileTotalMinutes;
+    } else {
+      const row = summaryMap.get(date);
+      screenTimeMinutes  = row?.screentime_minutes   || 0;
+      pcTotalMinutes     = row?.pc_total_minutes     || 0;
+      mobileTotalMinutes = row?.mobile_total_minutes || 0;
     }
 
-    let primary: 'pc' | 'mobile' | 'balanced' = 'balanced';
-    if (stats.pcTotalMinutes > stats.mobileTotalMinutes * 1.2) primary = 'pc';
-    else if (stats.mobileTotalMinutes > stats.pcTotalMinutes * 1.2) primary = 'mobile';
-    if (stats.screenTimeMinutes === 0) primary = 'balanced';
+    let primaryDevice: 'pc' | 'mobile' | 'balanced' = 'balanced';
+    if (screenTimeMinutes > 0) {
+      if (pcTotalMinutes > mobileTotalMinutes * 1.2) primaryDevice = 'pc';
+      else if (mobileTotalMinutes > pcTotalMinutes * 1.2) primaryDevice = 'mobile';
+    }
 
-    days.push({
-      date: dateStr,
-      dayName: format(targetDate, 'EEEE', { locale: es }),
-      totalMinutes: stats.screenTimeMinutes,
-      primaryDevice: primary
-    });
-  }
-  return days;
+    return { date, dayName, totalMinutes: screenTimeMinutes, primaryDevice, sleepMinutes: sleepMap.get(date) ?? 0 };
+  });
 }
 
 export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
@@ -112,6 +146,20 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     targetDate = toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE);
   }
 
+  const resolvedDateStr = format(targetDate, 'yyyy-MM-dd');
+
+  // For past dates: try daily_summary first (raw metrics were deleted after summarization)
+  if (!isToday) {
+    const [{ data: summary }, { data: sleepRows }] = await Promise.all([
+      supabase.from('daily_summary').select('*').eq('date', resolvedDateStr).single(),
+      supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
+    ]);
+
+    if (summary) {
+      return buildStatsFromSummary(summary, computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr));
+    }
+  }
+
   const startSantiagoLocal = startOfDay(targetDate);
   const endSantiagoLocal = endOfDay(targetDate);
   const startUtc = fromZonedTime(startSantiagoLocal, TIMEZONE);
@@ -119,23 +167,25 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const startIso = startUtc.toISOString();
   const endIso = endUtc.toISOString();
 
-  // Fetch Data
-  const { data: pcData } = await supabase.from('metrics').select('*')
-    .in('device_id', ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio'])
-    .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true });
+  // Fetch Data — single query, filter in-memory
+  const [{ data: allMetrics }, { data: sleepRows }] = await Promise.all([
+    supabase.from('metrics').select('*')
+      .in('device_id', ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'oppo-5-lite', 'moon-reader'])
+      .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true }),
+    supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
+  ]);
+  const sleepHourly = computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr);
 
-  const { data: mobileData } = await supabase.from('metrics').select('*')
-    .eq('device_id', 'oppo-5-lite')
-    .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true });
+  const pcData = (allMetrics || []).filter(r => ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio'].includes(r.device_id));
+  const mobileData = (allMetrics || []).filter(r => r.device_id === 'oppo-5-lite');
+  const readingData = (allMetrics || []).filter(r => r.device_id === 'moon-reader');
 
-  const { data: readingData } = await supabase.from('metrics').select('*')
-    .eq('device_id', 'moon-reader')
-    .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true });
-
-  if ((!pcData || pcData.length === 0) && (!mobileData || mobileData.length === 0) && (!readingData || readingData.length === 0)) {
+  if (!allMetrics || allMetrics.length === 0) {
       return {
           pcTotalMinutes: 0, mobileTotalMinutes: 0, readingMinutes: 0, screenTimeMinutes: 0, simultaneousMinutes: 0, gamingMinutes: 0,
-          booksReadToday: [], activityTimeline: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
+          sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
+          booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
+          activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
           pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
           locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0 },
           locationBreakdown: { pc: { office: 0, home: 0, outside: 0 }, mobile: { office: 0, home: 0, outside: 0 }, screenTime: { office: 0, home: 0, outside: 0 } },
@@ -384,15 +434,114 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
 
   return {
     pcTotalMinutes: totalPcSeconds / 60, mobileTotalMinutes: totalMobileSeconds / 60, screenTimeMinutes: exactDedupMs / 1000 / 60, simultaneousMinutes: simultaneousMs / 1000 / 60, readingMinutes: totalReadingMinutes,
+    sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
     gamingMinutes: totalGamingSeconds / 60, gamesPlayedToday: Array.from(gamesMap.entries()).map(([title, sec]) => ({ title, timeSpentSec: sec })).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
     booksReadToday: Array.from(booksFinalMap.values()).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
-    activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile })).sort((a, b) => a.hour.localeCompare(b.hour)),
+    activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile, sleep: sleepHourly[hour] || 0 })).sort((a, b) => a.hour.localeCompare(b.hour)),
     pcAppHistory: { all: toArray(pcAppsMapAll), 'Lenovo Yoga 7 Slim': toArray(pcAppsMapYoga), 'PC Escritorio': toArray(pcAppsMapDesktop) },
     topMobileApps: toArray(mobileAppsMap), recentEvents: unifiedEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 100),
     locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes },
     locationBreakdown: { pc: locBreakdown.pc, mobile: locBreakdown.mobile, screenTime: { office: locBreakdown.pc.office + locBreakdown.mobile.office, home: locBreakdown.pc.home + locBreakdown.mobile.home, outside: locBreakdown.pc.outside + locBreakdown.mobile.outside } },
     lastPcStatus, lastMobileStatus
   };
+}
+
+function computeSleepHourlyMinutes(
+  sessions: { start_time: string; end_time: string }[],
+  resolvedDateStr: string
+): Record<string, number> {
+  const dayStartMs = fromZonedTime(parseISO(resolvedDateStr + 'T00:00:00'), TIMEZONE).getTime();
+  const result: Record<string, number> = {};
+  for (const s of sessions) {
+    if (!s.start_time || !s.end_time) continue;
+    const sessionStartMs = new Date(s.start_time).getTime();
+    const sessionEndMs = new Date(s.end_time).getTime();
+    for (let h = 0; h < 24; h++) {
+      const hourStartMs = dayStartMs + h * 3600000;
+      const overlapStart = Math.max(sessionStartMs, hourStartMs);
+      const overlapEnd = Math.min(sessionEndMs, hourStartMs + 3600000);
+      if (overlapEnd > overlapStart) {
+        const key = String(h).padStart(2, '0');
+        result[key] = (result[key] || 0) + Math.round((overlapEnd - overlapStart) / 60000);
+      }
+    }
+  }
+  return result;
+}
+
+function buildStatsFromSummary(s: any, sleepHourly: Record<string, number> = {}): DashboardStats {
+  const toArray = (obj: Record<string, number> | null) =>
+    Object.entries(obj || {}).map(([name, minutes]) => ({ name, minutes })).sort((a, b) => b.minutes - a.minutes);
+
+  const pcApps = toArray(s.pc_app_summary);
+  const mobileApps = toArray(s.mobile_app_summary);
+  const games = Object.entries(s.games_summary || {}).map(([title, min]) => ({ title, timeSpentSec: Number(min) * 60 })).sort((a, b) => b.timeSpentSec - a.timeSpentSec);
+  const books = Object.entries(s.books_summary || {}).map(([title, min]) => ({ title, percent: 0, timeSpentSec: Number(min) * 60 })).sort((a, b) => b.timeSpentSec - a.timeSpentSec);
+
+  const loc = s.location_breakdown || {};
+  const pcLoc   = loc.pc     || { office: 0, home: 0, outside: 0 };
+  const mobLoc  = loc.mobile || { office: 0, home: 0, outside: 0 };
+
+  return {
+    pcTotalMinutes:     s.pc_total_minutes     || 0,
+    mobileTotalMinutes: s.mobile_total_minutes || 0,
+    readingMinutes:     s.reading_minutes      || 0,
+    gamingMinutes:      s.gaming_minutes       || 0,
+    screenTimeMinutes:  s.screentime_minutes   || 0,
+    simultaneousMinutes: s.simultaneous_minutes || 0,
+    sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
+    booksReadToday:    books,
+    gamesPlayedToday:  games,
+    topMobileApps:     mobileApps,
+    pcAppHistory: { all: pcApps, 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
+    locationStats: {
+      officeMinutes:  s.office_minutes  || 0,
+      homeMinutes:    s.home_minutes    || 0,
+      outsideMinutes: s.outside_minutes || 0,
+    },
+    locationBreakdown: {
+      pc:         { office: pcLoc.office,  home: pcLoc.home,  outside: pcLoc.outside  },
+      mobile:     { office: mobLoc.office, home: mobLoc.home, outside: mobLoc.outside },
+      screenTime: {
+        office:  (pcLoc.office  || 0) + (mobLoc.office  || 0),
+        home:    (pcLoc.home    || 0) + (mobLoc.home    || 0),
+        outside: (pcLoc.outside || 0) + (mobLoc.outside || 0),
+      },
+    },
+    activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
+    recentEvents: [],
+    lastPcStatus: null,
+    lastMobileStatus: null,
+  };
+}
+
+export async function getReadingStreak(todayHasReading: boolean): Promise<number> {
+  const { data } = await supabase
+    .from('daily_summary')
+    .select('date, reading_minutes')
+    .gt('reading_minutes', 0)
+    .order('date', { ascending: false })
+    .limit(60);
+
+  const today = format(toZonedTime(new Date(), TIMEZONE), 'yyyy-MM-dd');
+  let streak = 0;
+  let expected = today;
+
+  // If today has reading (from live data), count it
+  if (todayHasReading) {
+    streak++;
+    expected = format(subDays(parseISO(today), 1), 'yyyy-MM-dd');
+  }
+
+  for (const row of (data || [])) {
+    if (row.date === expected) {
+      streak++;
+      expected = format(subDays(parseISO(expected), 1), 'yyyy-MM-dd');
+    } else if (row.date < expected) {
+      break;
+    }
+  }
+  return streak;
 }
 
 function formatDurationSec(totalSec: number) {

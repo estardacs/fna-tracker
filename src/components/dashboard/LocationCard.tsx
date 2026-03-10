@@ -176,13 +176,16 @@ function LegendItem({ label, value, color, total }: any) {
 }
 
 function formatLastSeen(isoString: string) {
+  if (!isoString) return '-';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '-';
   return new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: false
-  }).format(new Date(isoString));
+  }).format(d);
 }
 
 function formatTime(minutes: number) {

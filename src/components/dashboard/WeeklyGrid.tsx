@@ -1,12 +1,14 @@
 'use client';
 
-import { Monitor, Smartphone, Scale } from 'lucide-react';
+import Link from 'next/link';
+import { Monitor, Smartphone, Scale, Moon } from 'lucide-react';
 
 type DayStat = {
   date: string;
   dayName: string;
   totalMinutes: number;
   primaryDevice: 'pc' | 'mobile' | 'balanced';
+  sleepMinutes: number;
 };
 
 export default function WeeklyGrid({ days }: { days: DayStat[] }) {
@@ -16,11 +18,8 @@ export default function WeeklyGrid({ days }: { days: DayStat[] }) {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {days.map((day) => {
           const isEmpty = day.totalMinutes === 0;
-          return (
-            <div 
-              key={day.date} 
-              className={`bg-gray-900/50 p-4 rounded-xl border border-gray-800 flex flex-col items-center justify-center gap-2 transition-colors ${isEmpty ? 'opacity-50' : 'hover:border-gray-700'}`}
-            >
+          const cardContent = (
+            <>
               <span className="text-gray-500 text-xs font-medium uppercase">{day.dayName}</span>
               <span className="text-2xl font-bold text-white tracking-tight">
                 {isEmpty ? '-' : formatHours(day.totalMinutes)}
@@ -34,7 +33,25 @@ export default function WeeklyGrid({ days }: { days: DayStat[] }) {
                   </>
                 )}
               </div>
+              {day.sleepMinutes > 0 && (
+                <div className="flex items-center gap-1 mt-1">
+                  <Moon className="w-3 h-3 text-indigo-400" />
+                  <span className="text-[10px] text-indigo-400 font-mono">{formatSleepHours(day.sleepMinutes)}</span>
+                </div>
+              )}
+            </>
+          );
+
+          const className = `bg-gray-900/50 p-4 rounded-xl border border-gray-800 flex flex-col items-center justify-center gap-2 transition-colors ${isEmpty ? 'opacity-50' : 'hover:border-gray-700 hover:scale-[1.02] cursor-pointer'}`;
+
+          return isEmpty ? (
+            <div key={day.date} className={className}>
+              {cardContent}
             </div>
+          ) : (
+            <Link key={day.date} href={`/?date=${day.date}`} className={className}>
+              {cardContent}
+            </Link>
           );
         })}
       </div>
@@ -46,4 +63,10 @@ function formatHours(minutes: number) {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return `${h}h ${m}m`;
+}
+
+function formatSleepHours(minutes: number) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h${m}m` : `${h}h`;
 }

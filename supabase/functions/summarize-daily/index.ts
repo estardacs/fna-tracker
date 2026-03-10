@@ -84,10 +84,15 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     }
   };
   
-  const getLocationType = (wifi: string | undefined): 'office' | 'home' | 'outside' => {
-    if (!wifi) return 'outside';
-    if (wifi === 'GeCo') return 'office';
-    if (wifi.includes('Depto 402') || wifi === 'Ethernet/Off') return 'home';
+  const getLocationType = (wifi: string | undefined, deviceId?: string): 'office' | 'home' | 'outside' => {
+    const ssid = wifi ? wifi.trim() : '';
+    if (deviceId === 'PC Escritorio') {
+      if (ssid === 'GeCo') return 'office';
+      return 'home';
+    }
+    if (!ssid) return 'outside';
+    if (ssid === 'GeCo') return 'office';
+    if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'home';
     return 'outside';
   };
 
@@ -130,7 +135,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     }
 
     const wifi = row.metadata?.wifi_ssid;
-    const loc = getLocationType(wifi);
+    const loc = getLocationType(wifi, row.device_id);
     const activeMin = totalSecondsInBatch / 60;
     if (loc === 'office') { rawOfficeMinutes += activeMin; locBreakdown.pc.office += activeMin; }
     else if (loc === 'home') { rawHomeMinutes += activeMin; locBreakdown.pc.home += activeMin; }
@@ -161,7 +166,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
       // For the last event of the day in a historical summary, assume a small default duration
       durationSec = 30;
     }
-    if (durationSec < 0 || durationSec > 600) durationSec = 30; // Sanity check for huge gaps
+    if (durationSec < 0) durationSec = 0; // Sanity check
 
     const appName = currentEvent.metadata?.app_name || 'Desconocido';
     if (!IGNORED_APPS.includes(appName) && durationSec > 5) {
@@ -246,7 +251,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     exactDedupMs += (current.end - current.start);
   }
 
-  const simultaneousMs = ((totalPcSeconds + totalMobileSeconds) * 1000) - exactDedupMs;
+  const simultaneousMs = Math.max(0, ((totalPcSeconds + totalMobileSeconds) * 1000) - exactDedupMs);
 
   const toArray = (map: Map<string, number>) => Array.from(map.entries()).map(([name, minutes]) => ({ name, minutes })).sort((a, b) => b.minutes - a.minutes);
 
@@ -370,139 +375,177 @@ async function updatePeriodSummary(
 }
 
 
+// Helper: build and insert a daily_summary row for a given dateStr
+async function processDayAndDelete(supabaseAdmin: any, dateStr: string): Promise<boolean> {
+  const stats = await calculateDailyStats(supabaseAdmin, dateStr);
+
+  const summaryData = {
+    date: dateStr,
+    pc_total_minutes: Math.round(stats.pcTotalMinutes),
+    mobile_total_minutes: Math.round(stats.mobileTotalMinutes),
+    reading_minutes: Math.round(stats.readingMinutes),
+    gaming_minutes: Math.round(stats.gamingMinutes),
+    screentime_minutes: Math.round(stats.screenTimeMinutes),
+    simultaneous_minutes: Math.round(stats.simultaneousMinutes),
+    office_minutes: Math.round(stats.locationStats.officeMinutes),
+    home_minutes: Math.round(stats.locationStats.homeMinutes),
+    outside_minutes: Math.round(stats.locationStats.outsideMinutes),
+    pc_app_summary: Object.fromEntries(stats.pcAppHistory.all.map((app: any) => [app.name, Math.round(app.minutes)])),
+    mobile_app_summary: Object.fromEntries(stats.topMobileApps.map((app: any) => [app.name, Math.round(app.minutes)])),
+    games_summary: Object.fromEntries(stats.gamesPlayedToday.map((game: any) => [game.title, Math.round(game.timeSpentSec / 60)])),
+    books_summary: Object.fromEntries(stats.booksReadToday.map((book: any) => [book.title, Math.round(book.timeSpentSec / 60)])),
+    location_breakdown: {
+      pc: {
+        office: Math.round(stats.locationBreakdown.pc.office),
+        home: Math.round(stats.locationBreakdown.pc.home),
+        outside: Math.round(stats.locationBreakdown.pc.outside),
+      },
+      mobile: {
+        office: Math.round(stats.locationBreakdown.mobile.office),
+        home: Math.round(stats.locationBreakdown.mobile.home),
+        outside: Math.round(stats.locationBreakdown.mobile.outside),
+      }
+    }
+  };
+
+  const { error: insertError } = await supabaseAdmin.from('daily_summary').insert(summaryData);
+  if (insertError) {
+    if (insertError.code === '23505') {
+      console.log(`[Summarizer] ${dateStr} already exists, skipping insert.`);
+    } else {
+      throw new Error(`Failed to insert daily summary for ${dateStr}: ${insertError.message}`);
+    }
+  } else {
+    console.log(`[Summarizer] Inserted daily_summary for ${dateStr}.`);
+  }
+
+  // Delete raw metrics for this day (correct UTC range derived from Santiago date)
+  const targetLocal = toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE);
+  const startUtc = fromZonedTime(startOfDay(targetLocal), TIMEZONE).toISOString();
+  const endUtc   = fromZonedTime(endOfDay(targetLocal),   TIMEZONE).toISOString();
+  const { error: delError } = await supabaseAdmin
+    .from('metrics')
+    .delete()
+    .gte('created_at', startUtc)
+    .lte('created_at', endUtc);
+  if (delError) throw new Error(`Failed to delete metrics for ${dateStr}: ${delError.message}`);
+  console.log(`[Summarizer] Deleted raw metrics for ${dateStr} (${startUtc} → ${endUtc}).`);
+
+  return true;
+}
+
 // Main Deno server
 Deno.serve(async (req) => {
-  // 1. Authorization
-  const authHeader = req.headers.get('Authorization')!;
-  if (authHeader !== `Bearer ${Deno.env.get('SUMMARIZER_SECRET')}`) {
+  // 1. Authorization — accept secret via X-Secret header OR as the full Bearer token
+  const xSecret = req.headers.get('X-Secret');
+  const authHeader = req.headers.get('Authorization') || '';
+  const bearerSecret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const providedSecret = xSecret || bearerSecret;
+  if (providedSecret !== Deno.env.get('SUMMARIZER_SECRET')) {
     return new Response('Unauthorized', { status: 401 });
   }
 
   try {
-    // 2. Setup Clients and Dates
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-    
-    // We process "yesterday" relative to the current server time
-    const now = new Date();
-    const yesterday = subDays(now, 1);
-    const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
 
-    // 3. Calculate Stats for Yesterday
-    const stats = await calculateDailyStats(supabaseAdmin, yesterdayStr);
+    // Compute "today" in Santiago — NEVER process today's data, it's still accumulating
+    const nowSantiago = toZonedTime(new Date(), TIMEZONE);
+    const todayStr = format(nowSantiago, 'yyyy-MM-dd');
 
-    // 4. Prepare the summary object for insertion
-    const summaryData = {
-      date: yesterdayStr,
-      pc_total_minutes: Math.round(stats.pcTotalMinutes),
-      mobile_total_minutes: Math.round(stats.mobileTotalMinutes),
-      reading_minutes: Math.round(stats.readingMinutes),
-      gaming_minutes: Math.round(stats.gamingMinutes),
-      screentime_minutes: Math.round(stats.screenTimeMinutes),
-      simultaneous_minutes: Math.round(stats.simultaneousMinutes),
-      office_minutes: Math.round(stats.locationStats.officeMinutes),
-      home_minutes: Math.round(stats.locationStats.homeMinutes),
-      outside_minutes: Math.round(stats.locationStats.outsideMinutes),
-      pc_app_summary: Object.fromEntries(stats.pcAppHistory.all.map(app => [app.name, Math.round(app.minutes)])),
-      mobile_app_summary: Object.fromEntries(stats.topMobileApps.map(app => [app.name, Math.round(app.minutes)])),
-      games_summary: Object.fromEntries(stats.gamesPlayedToday.map(game => [game.title, Math.round(game.timeSpentSec / 60)])),
-      books_summary: Object.fromEntries(stats.booksReadToday.map(book => [book.title, Math.round(book.timeSpentSec / 60)])),
-      location_breakdown: {
-          pc: {
-              office: Math.round(stats.locationBreakdown.pc.office),
-              home: Math.round(stats.locationBreakdown.pc.home),
-              outside: Math.round(stats.locationBreakdown.pc.outside),
-          },
-          mobile: {
-              office: Math.round(stats.locationBreakdown.mobile.office),
-              home: Math.round(stats.locationBreakdown.mobile.home),
-              outside: Math.round(stats.locationBreakdown.mobile.outside),
-          }
-      }
-    };
+    // Upper bound for metrics query: end of yesterday in Santiago → UTC
+    const endOfYesterdayLocal = endOfDay(subDays(nowSantiago, 1));
+    const endOfYesterdayUtc = fromZonedTime(endOfYesterdayLocal, TIMEZONE).toISOString();
 
-    // 5. Insert summary into the new table
-    const { error: insertError } = await supabaseAdmin.from('daily_summary').insert(summaryData);
-    
-    // Ignore duplicate key error (if we re-run the script)
-    if (insertError) {
-        if (insertError.code === '23505') { // Unique violation
-             console.log(`[Summarizer] Summary for ${yesterdayStr} already exists. Proceeding to aggregation.`);
-        } else {
-             throw new Error(`[Summarizer] Failed to insert daily summary: ${insertError.message}`);
-        }
-    } else {
-        console.log(`[Summarizer] Successfully created summary for ${yesterdayStr}.`);
+    console.log(`[Summarizer] Today (Santiago): ${todayStr}. Looking for pending days before this.`);
+
+    // Get already-summarized dates (small query, fast)
+    const { data: existingSummaries } = await supabaseAdmin
+      .from('daily_summary')
+      .select('date');
+    const summarizedDates = new Set((existingSummaries || []).map((s: any) => s.date));
+
+    // Find the date range in metrics using min/max queries (avoids row-limit issues)
+    const [{ data: earliestRow }, { data: latestRow }] = await Promise.all([
+      supabaseAdmin.from('metrics').select('created_at').lte('created_at', endOfYesterdayUtc).order('created_at', { ascending: true  }).limit(1),
+      supabaseAdmin.from('metrics').select('created_at').lte('created_at', endOfYesterdayUtc).order('created_at', { ascending: false }).limit(1),
+    ]);
+
+    if (!earliestRow?.length || !latestRow?.length) {
+      return new Response(JSON.stringify({ message: 'No metrics found before today.' }), {
+        headers: { 'Content-Type': 'application/json' }, status: 200,
+      });
     }
 
-    // 6. Delete the raw metrics for that day
-    const startOfDayToDel = fromZonedTime(startOfDay(yesterday), TIMEZONE).toISOString();
-    const endOfDayToDel = fromZonedTime(endOfDay(yesterday), TIMEZONE).toISOString();
-    
-    console.log(`[Summarizer] Deleting raw metrics between ${startOfDayToDel} and ${endOfDayToDel}...`);
-    const { error: deleteError } = await supabaseAdmin
-      .from('metrics')
-      .delete()
-      .gte('created_at', startOfDayToDel)
-      .lte('created_at', endOfDayToDel);
+    // Generate every Santiago date between earliest and latest metric
+    const firstDateStr = format(toZonedTime(new Date(earliestRow[0].created_at), TIMEZONE), 'yyyy-MM-dd');
+    const lastDateStr  = format(toZonedTime(new Date(latestRow[0].created_at),  TIMEZONE), 'yyyy-MM-dd');
 
-    if (deleteError) throw new Error(`[Summarizer] Failed to delete raw metrics: ${deleteError.message}`);
-    console.log(`[Summarizer] Successfully deleted raw metrics for ${yesterdayStr}.`);
+    const allDates: string[] = [];
+    let cursor = parseISO(firstDateStr + 'T12:00:00');
+    const end  = parseISO(lastDateStr  + 'T12:00:00');
+    while (cursor <= end) {
+      allDates.push(format(cursor, 'yyyy-MM-dd'));
+      cursor = addDays(cursor, 1);
+    }
 
+    // Dates that need processing = in range, before today, not yet summarized
+    const datesToProcess = allDates.filter(d => d < todayStr && !summarizedDates.has(d));
 
-    // 7. Update AGGREGATED TABLES (Weekly, Monthly, Yearly)
-    
-    // Weekly
-    const weekStart = startOfWeek(yesterday, { weekStartsOn: 1 }); // Monday
-    const weekEnd = addDays(weekStart, 6); // Sunday
-    await updatePeriodSummary(
-        supabaseAdmin, 
-        'weekly', 
-        format(weekStart, 'yyyy-MM-dd'), 
-        format(weekEnd, 'yyyy-MM-dd'), 
-        'week_start_date', 
-        format(weekStart, 'yyyy-MM-dd')
-    );
+    console.log(`[Summarizer] Dates to process: ${datesToProcess.length > 0 ? datesToProcess.join(', ') : 'none'}`);
 
-    // Monthly
-    const monthStart = startOfMonth(yesterday);
-    const monthEnd = endOfDay(subDays(addDays(monthStart, 32), new Date(addDays(monthStart, 32)).getDate())); // Last day of month hack or just end of month
-    // Easier way for end of month in SQL query is just matching the month. 
-    // But for our range query, we can use the first and last day.
-    // Actually, updatePeriodSummary takes date strings.
-    // Let's rely on date-fns `endOfMonth` if available, or just filtering by month start in SQL is harder with current generic function.
-    // Let's stick to start/end dates.
-    const nextMonth = startOfMonth(addDays(monthStart, 32));
-    const realMonthEnd = subDays(nextMonth, 1);
-    
-    await updatePeriodSummary(
-        supabaseAdmin, 
-        'monthly', 
-        format(monthStart, 'yyyy-MM-dd'), 
-        format(realMonthEnd, 'yyyy-MM-dd'), 
-        'month_start_date', 
-        format(monthStart, 'yyyy-MM-dd')
-    );
+    if (datesToProcess.length === 0) {
+      return new Response(JSON.stringify({ message: 'No pending days to summarize.' }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    }
 
-    // Yearly
-    const yearStart = startOfYear(yesterday);
-    const yearEnd = subDays(startOfYear(addDays(yearStart, 400)), 1); // rough end of year
-    await updatePeriodSummary(
-        supabaseAdmin, 
-        'yearly', 
-        format(yearStart, 'yyyy-MM-dd'), 
-        format(yearEnd, 'yyyy-MM-dd'), 
-        'year', 
-        getYear(yesterday)
-    );
+    // Process each pending day
+    for (const dateStr of datesToProcess) {
+      await processDayAndDelete(supabaseAdmin, dateStr);
+    }
 
-    return new Response(JSON.stringify({ message: `Successfully summarized and cleaned data for ${yesterdayStr}.` }), {
+    // Update period summaries for all affected weeks/months/years
+    const affectedWeeks = new Set<string>();
+    const affectedMonths = new Set<string>();
+    const affectedYears = new Set<number>();
+
+    for (const dateStr of datesToProcess) {
+      const d = parseISO(dateStr + 'T12:00:00');
+      const weekStart = startOfWeek(d, { weekStartsOn: 1 });
+      affectedWeeks.add(format(weekStart, 'yyyy-MM-dd'));
+      affectedMonths.add(format(startOfMonth(d), 'yyyy-MM-dd'));
+      affectedYears.add(getYear(d));
+    }
+
+    for (const weekStartStr of affectedWeeks) {
+      const weekStart = parseISO(weekStartStr + 'T12:00:00');
+      const weekEnd = addDays(weekStart, 6);
+      await updatePeriodSummary(supabaseAdmin, 'weekly', weekStartStr, format(weekEnd, 'yyyy-MM-dd'), 'week_start_date', weekStartStr);
+    }
+
+    for (const monthStartStr of affectedMonths) {
+      const monthStart = parseISO(monthStartStr + 'T12:00:00');
+      const nextMonth = startOfMonth(addDays(monthStart, 32));
+      const monthEnd = subDays(nextMonth, 1);
+      await updatePeriodSummary(supabaseAdmin, 'monthly', monthStartStr, format(monthEnd, 'yyyy-MM-dd'), 'month_start_date', monthStartStr);
+    }
+
+    for (const year of affectedYears) {
+      const yearStart = startOfYear(new Date(year, 6, 1));
+      const yearEnd = subDays(startOfYear(new Date(year + 1, 6, 1)), 1);
+      await updatePeriodSummary(supabaseAdmin, 'yearly', format(yearStart, 'yyyy-MM-dd'), format(yearEnd, 'yyyy-MM-dd'), 'year', year);
+    }
+
+    return new Response(JSON.stringify({ message: `Processed ${datesToProcess.length} day(s): ${datesToProcess.join(', ')}` }), {
       headers: { 'Content-Type': 'application/json' },
       status: 200,
     });
 
   } catch (err) {
-    console.error('[Summarizer] An unexpected error occurred:', err.message);
-    return new Response(JSON.stringify({ error: err.message }), {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[Summarizer] An unexpected error occurred:', msg);
+    return new Response(JSON.stringify({ error: msg }), {
       headers: { 'Content-Type': 'application/json' },
       status: 500,
     });

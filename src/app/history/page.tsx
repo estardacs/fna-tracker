@@ -4,6 +4,26 @@ import HistoryView from '@/components/history/HistoryView';
 import { getHistoryData, PeriodType } from '@/lib/history-processor';
 import Link from 'next/link';
 
+async function triggerSummarize() {
+  const secret = process.env.SUMMARIZER_SECRET;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!secret || !supabaseUrl || !anonKey) return;
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/summarize-daily`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${anonKey}`,
+        'X-Secret': secret,
+      },
+      signal: AbortSignal.timeout(25_000),
+    });
+    console.log('[history] summarize-daily:', res.status);
+  } catch (e: any) {
+    console.warn('[history] summarize-daily failed:', e.message);
+  }
+}
+
 export const dynamic = 'force-dynamic';
 
 // A loading skeleton component matching the new layout
@@ -76,6 +96,11 @@ export default async function HistoryPage({
 }
 
 async function HistoryData({ period, dateStr }: { period: PeriodType, dateStr?: string }) {
+  // Trigger daily summarization before reading data so history is always up to date.
+  // Calls the Supabase Edge Function directly — secret never exposed to the client.
+  // Silently proceeds if not configured or if the call fails.
+  await triggerSummarize();
+
   const data = await getHistoryData(period, dateStr);
   return <HistoryView data={data} />;
 }

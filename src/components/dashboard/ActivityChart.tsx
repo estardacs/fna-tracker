@@ -28,6 +28,10 @@ export default function ActivityChart({ data }: { data: any[] }) {
           <span className="w-2.5 h-2.5 rounded-full bg-[#10b981]"></span>
           <span className="text-gray-300">Teléfono</span>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#818cf8]"></span>
+          <span className="text-gray-300">Sueño</span>
+        </div>
       </div>
 
       <ResponsiveContainer width="100%" height="100%">
@@ -40,6 +44,10 @@ export default function ActivityChart({ data }: { data: any[] }) {
             <linearGradient id="colorMobile" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
               <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+            </linearGradient>
+            <linearGradient id="colorSleep" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#818cf8" stopOpacity={0.4}/>
+              <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
@@ -58,14 +66,23 @@ export default function ActivityChart({ data }: { data: any[] }) {
             fillOpacity={1} 
             fill="url(#colorPc)" 
           />
-          <Area 
-            type="monotone" 
-            dataKey="mobile" 
+          <Area
+            type="monotone"
+            dataKey="mobile"
             name="Teléfono"
-            stroke="#10b981" 
+            stroke="#10b981"
             strokeWidth={2}
-            fillOpacity={1} 
-            fill="url(#colorMobile)" 
+            fillOpacity={1}
+            fill="url(#colorMobile)"
+          />
+          <Area
+            type="monotone"
+            dataKey="sleep"
+            name="Sueño"
+            stroke="#818cf8"
+            strokeWidth={2}
+            fillOpacity={1}
+            fill="url(#colorSleep)"
           />
         </AreaChart>
       </ResponsiveContainer>
