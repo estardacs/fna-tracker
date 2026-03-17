@@ -1,16 +1,19 @@
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
--- NOTE: pg_cron is enabled by default in Supabase via Dashboard or by default on new projects.
--- Ensure pg_cron is available if you are self-hosting.
-
--- Remove any existing job with the same name
-SELECT cron.unschedule('summarize-daily-job');
+-- Safely attempt to remove the job if it exists
+DO $$
+BEGIN
+  PERFORM cron.unschedule('summarize-daily-job');
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Ignore the error if the job does not exist yet
+    NULL;
+END $$;
 
 -- Schedule the summarize-daily Edge Function
 -- '0 4 * * *' in UTC corresponds to 1:00 AM in America/Santiago (during DST/summer time) or 12:00 AM (during winter time).
--- You will need to replace the URL with your project's Edge Function URL, 
--- and replace '<YOUR_SUMMARIZER_SECRET>' with the secret string set in your environment.
+-- Replace '<YOUR_SUMMARIZER_SECRET>' with the secret string set in your environment.
 SELECT cron.schedule(
   'summarize-daily-job',
   '0 4 * * *',

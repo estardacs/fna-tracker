@@ -12,12 +12,15 @@ type DayStat = {
 };
 
 export default function WeeklyGrid({ days }: { days: DayStat[] }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   return (
     <div className="w-full">
       <h3 className="text-gray-400 text-sm mb-4 font-medium uppercase tracking-wider">Resumen Semanal</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {days.map((day) => {
           const isEmpty = day.totalMinutes === 0;
+          const isFuture = day.date > todayStr;
           const cardContent = (
             <>
               <span className="text-gray-500 text-xs font-medium uppercase">{day.dayName}</span>
@@ -42,9 +45,15 @@ export default function WeeklyGrid({ days }: { days: DayStat[] }) {
             </>
           );
 
-          const className = `bg-gray-900/50 p-4 rounded-xl border border-gray-800 flex flex-col items-center justify-center gap-2 transition-colors ${isEmpty ? 'opacity-50' : 'hover:border-gray-700 hover:scale-[1.02] cursor-pointer'}`;
+          const className = `bg-gray-900/50 p-4 rounded-xl border border-gray-800 flex flex-col items-center justify-center gap-2 transition-colors ${
+            isFuture
+              ? 'opacity-30'
+              : isEmpty
+              ? 'opacity-50 hover:border-gray-700 hover:scale-[1.02] cursor-pointer'
+              : 'hover:border-gray-700 hover:scale-[1.02] cursor-pointer'
+          }`;
 
-          return isEmpty ? (
+          return isFuture ? (
             <div key={day.date} className={className}>
               {cardContent}
             </div>

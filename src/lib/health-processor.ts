@@ -28,6 +28,17 @@ const WORKOUT_DISPLAY_NAMES: Record<string, string> = {
   martial_arts: 'Artes Marciales',
 };
 
+export type WorkoutEntry = {
+  type: string;
+  displayName: string;
+  durationMinutes: number;
+  caloriesBurned: number;
+  avgHeartRate: number | null;
+  maxHeartRate: number | null;
+  distanceKm: number | null;
+  dateStr: string; // Santiago date of the workout
+};
+
 export type HealthDailyStats = {
   steps: number;
   caloriesBurned: number;
@@ -58,21 +69,13 @@ export type HealthDailyStats = {
   } | null;
   weight: {
     current: number | null;
-    date: string | null;       // fecha del último registro
+    date: string | null;
     previousWeek: number | null;
     delta: number | null;
     bodyFat: number | null;
     history: { date: string; weight: number }[];
   };
-  workouts: {
-    type: string;
-    displayName: string;
-    durationMinutes: number;
-    caloriesBurned: number;
-    avgHeartRate: number | null;
-    maxHeartRate: number | null;
-    distanceKm: number | null;
-  }[];
+  workouts: WorkoutEntry[];
 };
 
 export type HealthWeekDay = {
@@ -161,8 +164,8 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
       ? Math.round((latestWeight.weight_kg - previousWeekWeight) * 10) / 10
       : null;
 
-  // Workouts
-  const workouts = (workoutsRes.data || []).map((w: any) => ({
+  // Workouts — if none for the requested date, fall back to the most recent within 14 days
+  const mapWorkout = (w: any): WorkoutEntry => ({
     type: w.activity_type || '',
     displayName:
       WORKOUT_DISPLAY_NAMES[(w.activity_type || '').toLowerCase()] ||
@@ -173,7 +176,11 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
     avgHeartRate: w.avg_heart_rate || null,
     maxHeartRate: w.max_heart_rate || null,
     distanceKm: w.distance_meters ? Math.round(w.distance_meters / 100) / 10 : null,
-  }));
+    dateStr: format(toZonedTime(new Date(w.start_time), TIMEZONE), 'yyyy-MM-dd'),
+  });
+
+  let workouts: WorkoutEntry[] = (workoutsRes.data || []).map(mapWorkout);
+
 
   return {
     steps: m?.step_count || 0,

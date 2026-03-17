@@ -12,9 +12,10 @@ const MEALS = ['desayuno', 'almuerzo', 'once', 'cena', 'snack'] as const;
 
 interface DietContentProps {
   data: DietDayStats;
+  isOwner: boolean;
 }
 
-export default function DietContent({ data }: DietContentProps) {
+export default function DietContent({ data, isOwner }: DietContentProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [sectionsVisible, setSectionsVisible] = useState(false);
@@ -35,13 +36,22 @@ export default function DietContent({ data }: DietContentProps) {
     refresh();
   };
 
+  const handleMacroGoalSave = async (macros: { protein_g: number; carbs_g: number; fat_g: number; fiber_g: number }) => {
+    await fetch('/api/diet/goals', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calories: data.goal.calories, ...macros }),
+    });
+    refresh();
+  };
+
   return (
     <FadeIn>
       <div className="space-y-8">
         {/* Summary row */}
         <div className="flex flex-col md:flex-row gap-6 md:gap-10 items-center md:items-start bg-gray-900/30 border border-gray-800/50 rounded-2xl p-6">
-          <CalorieRing consumed={data.totals.calories} goal={data.goal.calories} onGoalSave={handleGoalSave} />
-          <MacroBars consumed={data.totals} goal={data.goal} />
+          <CalorieRing consumed={data.totals.calories} goal={data.goal.calories} onGoalSave={isOwner ? handleGoalSave : undefined} />
+          <MacroBars consumed={data.totals} goal={data.goal} calories={data.goal.calories} onGoalSave={isOwner ? handleMacroGoalSave : undefined} />
           {/* Secondary stats */}
           <div
             className="flex flex-row md:flex-col flex-wrap gap-3 shrink-0"
@@ -81,6 +91,7 @@ export default function DietContent({ data }: DietContentProps) {
                 meal={meal}
                 entries={data.meals[meal] ?? []}
                 date={data.date}
+                isOwner={isOwner}
                 onRefresh={refresh}
               />
             </div>

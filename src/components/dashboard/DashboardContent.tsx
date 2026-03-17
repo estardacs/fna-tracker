@@ -1,4 +1,4 @@
-import { getDailyStats, getWeeklyStats, getReadingStreak } from '@/lib/data-processor';
+import { getDailyStats, getWeeklyStats } from '@/lib/data-processor';
 import { getHealthDailyStats } from '@/lib/health-processor';
 import ActivityChart from '@/components/dashboard/ActivityChart';
 import AppsList from '@/components/dashboard/AppsList';
@@ -16,9 +16,10 @@ import { toZonedTime } from 'date-fns-tz';
 
 type DashboardContentProps = {
   date?: string;
+  isOwner?: boolean;
 };
 
-export default async function DashboardContent({ date }: DashboardContentProps) {
+export default async function DashboardContent({ date, isOwner = false }: DashboardContentProps) {
   // Fetch data in parallel for better performance
   const [stats, weeklyStats, health] = await Promise.all([
     getDailyStats(date),
@@ -32,7 +33,6 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
     ? pastDays.reduce((s, d) => s + d.totalMinutes, 0) / pastDays.length
     : null;
 
-  const readingStreak = await getReadingStreak(stats.readingMinutes > 0);
 
   // Empty State
   if (stats.screenTimeMinutes === 0 && stats.pcTotalMinutes === 0 && stats.mobileTotalMinutes === 0) {
@@ -55,8 +55,6 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
   }
 
   // Formatear la lista de libros (Lista con bullets y tiempo real)
-  const streakText = readingStreak > 1 ? `Racha: ${readingStreak} días seguidos` : null;
-
   const booksContent = stats.booksReadToday.length > 0 ? (
     <ul className="list-disc list-inside space-y-3 mt-3 text-gray-300">
       {stats.booksReadToday.map((b, idx) => (
@@ -77,14 +75,7 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
     <p className="text-gray-500 text-sm mt-2 italic">Sin lectura registrada</p>
   );
 
-  const booksSubtext = (
-    <>
-      {streakText && (
-        <p className="text-amber-400/80 text-xs font-medium mb-2">{streakText}</p>
-      )}
-      {booksContent}
-    </>
-  );
+  const booksSubtext = booksContent;
 
   const gamesContent = stats.gamesPlayedToday.length > 0 ? (
     <ul className="list-disc list-inside space-y-3 mt-3 text-gray-300">
@@ -176,14 +167,12 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
 
         {/* Health KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
-          {health.steps > 0 && (
-            <KpiCard
-              title="Pasos"
-              value={health.steps >= 1000 ? `${(health.steps / 1000).toFixed(1)}k` : `${health.steps}`}
-              icon={<Footprints className="text-emerald-400 w-4 h-4 md:w-5 md:h-5" />}
-              subtext={`${Math.round((health.steps / 8000) * 100)}% de meta`}
-            />
-          )}
+          <KpiCard
+            title="Pasos"
+            value={health.steps >= 1000 ? `${(health.steps / 1000).toFixed(1)}k` : `${health.steps}`}
+            icon={<Footprints className="text-emerald-400 w-4 h-4 md:w-5 md:h-5" />}
+            subtext={health.steps > 0 ? `${Math.round((health.steps / 8000) * 100)}% de meta` : 'sin datos hoy'}
+          />
           {health.heartRate.avg > 0 && (
             <KpiCard
               title="Frec. Cardíaca"
@@ -201,6 +190,7 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
             />
           )}
           <WeightWidget
+            isOwner={isOwner}
             weight={health.weight.current !== null && health.weight.date ? {
               kg: health.weight.current,
               date: health.weight.date,
@@ -217,7 +207,7 @@ export default async function DashboardContent({ date }: DashboardContentProps) 
         {/* Sleep + Workouts */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <SleepCard sleep={health.sleep} />
-          <WorkoutCard workouts={health.workouts} />
+          <WorkoutCard workouts={health.workouts} requestedDate={date} />
         </div>
       </section>
 

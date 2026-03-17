@@ -19,11 +19,11 @@ export default function DietButton() {
       onClick={handleClick}
       disabled={isPending}
       className={cn(
-        "group relative inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg hover:bg-orange-500/20 hover:border-orange-500/40 transition-all duration-300 cursor-pointer",
+        "group relative inline-flex items-center justify-center gap-2 w-36 py-2 text-sm font-medium text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg hover:bg-orange-500/20 hover:border-orange-500/40 transition-all duration-300 cursor-pointer",
         isPending && "opacity-70 cursor-wait"
       )}
     >
-      <span>🍽</span>
+      {!isPending && <span>🍽</span>}
       <span>{isPending ? 'Cargando...' : 'Dieta'}</span>
     </button>
   );

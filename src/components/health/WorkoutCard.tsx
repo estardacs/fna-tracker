@@ -1,5 +1,7 @@
 import { Activity, Mountain, Waves, PersonStanding, Footprints, Bike, Dumbbell, Flower2, Flame, Heart } from 'lucide-react';
 import { type ReactNode } from 'react';
+import { format, isYesterday, isToday, parseISO } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 type Workout = {
   type: string;
@@ -9,9 +11,20 @@ type Workout = {
   avgHeartRate: number | null;
   maxHeartRate: number | null;
   distanceKm: number | null;
+  dateStr: string;
 };
 
-type Props = { workouts: Workout[] };
+type Props = { workouts: Workout[]; requestedDate?: string };
+
+function formatWorkoutDate(dateStr: string, requestedDate?: string): string | null {
+  const d = parseISO(dateStr + 'T12:00:00');
+  const req = requestedDate ? parseISO(requestedDate + 'T12:00:00') : new Date();
+  // Only show label if workout is from a different day than requested
+  if (dateStr === (requestedDate ?? format(new Date(), 'yyyy-MM-dd'))) return null;
+  if (isToday(d)) return 'hoy';
+  if (isYesterday(d)) return 'ayer';
+  return format(d, "d 'de' MMM", { locale: es });
+}
 
 function getWorkoutIcon(type: string): ReactNode {
   const t = type.toLowerCase();
@@ -32,11 +45,11 @@ function formatDuration(minutes: number) {
   return `${h}h ${m}m`;
 }
 
-export default function WorkoutCard({ workouts }: Props) {
+export default function WorkoutCard({ workouts, requestedDate }: Props) {
   if (workouts.length === 0) {
     return (
       <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4 flex items-center justify-center min-h-[120px]">
-        <p className="text-gray-600 text-sm italic">Sin entrenamientos hoy</p>
+        <p className="text-gray-600 text-sm italic">Sin entrenamientos recientes</p>
       </div>
     );
   }
@@ -45,32 +58,40 @@ export default function WorkoutCard({ workouts }: Props) {
     <div className="bg-gray-900/50 rounded-xl border border-gray-800 p-4">
       <h3 className="text-gray-400 text-xs font-medium uppercase tracking-wider mb-3">Entrenamientos</h3>
       <div className="flex flex-col gap-3">
-        {workouts.map((w, i) => (
-          <div key={i} className="flex items-center gap-3 bg-black/20 rounded-lg p-3 border border-gray-800/50">
-            <div className="p-2 bg-gray-800/50 rounded-lg text-emerald-400 shrink-0">
-              {getWorkoutIcon(w.type)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-200 truncate">{w.displayName}</p>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                <span className="text-[10px] text-gray-500 font-mono">{formatDuration(w.durationMinutes)}</span>
-                {w.caloriesBurned > 0 && (
-                  <span className="text-[10px] text-gray-500 font-mono flex items-center gap-0.5">
-                    <Flame className="w-2.5 h-2.5 text-orange-400" />{w.caloriesBurned} kcal
-                  </span>
-                )}
-                {w.avgHeartRate && (
-                  <span className="text-[10px] text-gray-500 font-mono flex items-center gap-0.5">
-                    <Heart className="w-2.5 h-2.5 text-rose-400" />{w.avgHeartRate} bpm
-                  </span>
-                )}
-                {w.distanceKm && (
-                  <span className="text-[10px] text-gray-500 font-mono">{w.distanceKm} km</span>
-                )}
+        {workouts.map((w, i) => {
+          const dateLabel = formatWorkoutDate(w.dateStr, requestedDate);
+          return (
+            <div key={i} className="flex items-center gap-3 bg-black/20 rounded-lg p-3 border border-gray-800/50">
+              <div className="p-2 bg-gray-800/50 rounded-lg text-emerald-400 shrink-0">
+                {getWorkoutIcon(w.type)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <p className="text-sm font-medium text-gray-200 truncate">{w.displayName}</p>
+                  {dateLabel && (
+                    <span className="text-[10px] text-gray-600 italic shrink-0">{dateLabel}</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                  <span className="text-[10px] text-gray-500 font-mono">{formatDuration(w.durationMinutes)}</span>
+                  {w.caloriesBurned > 0 && (
+                    <span className="text-[10px] text-gray-500 font-mono flex items-center gap-0.5">
+                      <Flame className="w-2.5 h-2.5 text-orange-400" />{w.caloriesBurned} kcal
+                    </span>
+                  )}
+                  {w.avgHeartRate && (
+                    <span className="text-[10px] text-gray-500 font-mono flex items-center gap-0.5">
+                      <Heart className="w-2.5 h-2.5 text-rose-400" />{w.avgHeartRate} bpm
+                    </span>
+                  )}
+                  {w.distanceKm && (
+                    <span className="text-[10px] text-gray-500 font-mono">{w.distanceKm} km</span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

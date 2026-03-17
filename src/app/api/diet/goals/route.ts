@@ -20,22 +20,33 @@ function calcMacros(calories: number, weightKg: number) {
 
 export async function PUT(req: NextRequest) {
   const body = await req.json();
-  const { calories } = body;
+  const { calories, protein_g, carbs_g, fat_g, fiber_g } = body;
 
   if (!calories || Number(calories) <= 0) {
     return NextResponse.json({ error: 'calories requerido' }, { status: 400 });
   }
 
-  // Fetch latest weight
-  const { data: weightRow } = await supabase
-    .from('health_weight_log')
-    .select('weight_kg')
-    .order('date', { ascending: false })
-    .limit(1)
-    .single();
+  let macros: { protein_g: number; fat_g: number; carbs_g: number; fiber_g: number };
 
-  const weightKg = weightRow?.weight_kg ?? 80.6;
-  const macros = calcMacros(Number(calories), weightKg);
+  // If any macro is provided manually, use all manual values (skip auto-calc)
+  if (protein_g !== undefined || carbs_g !== undefined || fat_g !== undefined || fiber_g !== undefined) {
+    macros = {
+      protein_g: Number(protein_g ?? 0),
+      carbs_g:   Number(carbs_g   ?? 0),
+      fat_g:     Number(fat_g     ?? 0),
+      fiber_g:   Number(fiber_g   ?? FIBER_G),
+    };
+  } else {
+    // Auto-calculate from latest weight
+    const { data: weightRow } = await supabase
+      .from('health_weight_log')
+      .select('weight_kg')
+      .order('date', { ascending: false })
+      .limit(1)
+      .single();
+    const weightKg = weightRow?.weight_kg ?? 80.6;
+    macros = calcMacros(Number(calories), weightKg);
+  }
 
   const { error } = await supabase
     .from('diet_goals')

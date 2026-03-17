@@ -147,19 +147,43 @@ export async function searchFoodItems(query: string): Promise<FoodItem[]> {
   }));
 }
 
-/** Returns a Map<dateStr, totalCalories> for the given date range.
- *  Used by history-processor so both views read calories identically. */
-export async function getDietCaloriesForRange(startIso: string, endIso: string): Promise<Map<string, number>> {
+export interface DietDaySummary {
+  calories: number;
+  topFoods: { name: string; cal: number }[];
+}
+
+/** Returns a Map<dateStr, DietDaySummary> for the given date range.
+ *  Used by history-processor so both views read diet data identically. */
+export async function getDietDataForRange(startIso: string, endIso: string): Promise<Map<string, DietDaySummary>> {
+  noStore();
   const { data } = await supabase
     .from('diet_log')
-    .select('date, calories')
+    .select('date, calories, food_items(name)')
     .gte('date', startIso)
     .lte('date', endIso);
 
-  const map = new Map<string, number>();
+  const map = new Map<string, DietDaySummary>();
   for (const row of (data || []) as any[]) {
-    map.set(row.date, (map.get(row.date) ?? 0) + Number(row.calories));
+    const name: string = row.food_items?.name ?? 'Desconocido';
+    const cal = Number(row.calories) || 0;
+    if (!map.has(row.date)) map.set(row.date, { calories: 0, topFoods: [] });
+    const entry = map.get(row.date)!;
+    entry.calories += cal;
+    entry.topFoods.push({ name, cal });
   }
+  // Sort foods desc by calories, keep top 4 per day
+  for (const entry of map.values()) {
+    entry.topFoods.sort((a, b) => b.cal - a.cal);
+    entry.topFoods = entry.topFoods.slice(0, 4);
+  }
+  return map;
+}
+
+/** @deprecated Use getDietDataForRange */
+export async function getDietCaloriesForRange(startIso: string, endIso: string): Promise<Map<string, number>> {
+  const dietMap = await getDietDataForRange(startIso, endIso);
+  const map = new Map<string, number>();
+  for (const [date, entry] of dietMap) map.set(date, entry.calories);
   return map;
 }
 

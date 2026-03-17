@@ -1,7 +1,10 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { getDietDayStats } from '@/lib/diet-processor';
 import DietContent from '@/components/diet/DietContent';
+import DietDateNavigator from '@/components/diet/DietDateNavigator';
+import AuthButton from '@/components/diet/AuthButton';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { es } from 'date-fns/locale';
@@ -61,9 +64,9 @@ function DietSkeleton() {
   );
 }
 
-async function DietData({ date }: { date?: string }) {
+async function DietData({ date, isOwner }: { date?: string; isOwner: boolean }) {
   const data = await getDietDayStats(date);
-  return <DietContent data={data} />;
+  return <DietContent data={data} isOwner={isOwner} />;
 }
 
 export default async function DietPage({
@@ -74,6 +77,9 @@ export default async function DietPage({
   const params = await searchParams;
   const targetDate = params.date;
 
+  const cookieStore = await cookies();
+  const isOwner = cookieStore.get('admin_token')?.value === process.env.ADMIN_SECRET;
+
   const displayDate = targetDate
     ? format(new Date(targetDate + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })
     : format(toZonedTime(new Date(), TIMEZONE), "EEEE d 'de' MMMM", { locale: es });
@@ -81,7 +87,7 @@ export default async function DietPage({
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
       <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-4">
-        <div className="w-full">
+        <div className="w-full md:w-auto">
           <Link href="/" className="text-sm text-blue-400 hover:text-blue-300 transition-colors mb-4 inline-flex items-center gap-1">
             <span className="text-lg">←</span> Volver al Dashboard
           </Link>
@@ -90,10 +96,14 @@ export default async function DietPage({
           </h1>
           <p className="text-gray-500 text-sm mt-1 capitalize">{displayDate}</p>
         </div>
+        <div className="flex items-center gap-4">
+          <AuthButton isOwner={isOwner} />
+          <DietDateNavigator />
+        </div>
       </header>
 
       <Suspense key={targetDate} fallback={<DietSkeleton />}>
-        <DietData date={targetDate} />
+        <DietData date={targetDate} isOwner={isOwner} />
       </Suspense>
     </main>
   );

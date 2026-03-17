@@ -15,9 +15,10 @@ export interface WeightEntry {
 interface WeightWidgetProps {
   weight: WeightEntry | null;
   date: string;
+  isOwner?: boolean;
 }
 
-export default function WeightWidget({ weight, date }: WeightWidgetProps) {
+export default function WeightWidget({ weight, date, isOwner = false }: WeightWidgetProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [input, setInput] = useState(weight?.kg.toFixed(1) ?? '');
@@ -64,7 +65,7 @@ export default function WeightWidget({ weight, date }: WeightWidgetProps) {
           ? 'border-purple-500/50 cursor-default'
           : 'border-gray-800 hover:border-gray-700 cursor-pointer'
       )}
-      onClick={() => { if (!editing) setEditing(true); }}
+      onClick={() => { if (!editing && isOwner) setEditing(true); }}
     >
       {/* Header */}
       <div className="flex justify-between items-start mb-3 md:mb-4">
@@ -139,8 +140,8 @@ export default function WeightWidget({ weight, date }: WeightWidgetProps) {
             {weight && (
               <span className={cn('text-sm', stale ? 'text-gray-600' : 'text-gray-500')}>kg</span>
             )}
-            {/* Edit hint on hover */}
-            <Pencil className="w-3 h-3 text-gray-700 group-hover:text-gray-500 transition-colors ml-auto shrink-0 mb-0.5" />
+            {/* Edit hint on hover — solo owner */}
+            {isOwner && <Pencil className="w-3 h-3 text-gray-700 group-hover:text-gray-500 transition-colors ml-auto shrink-0 mb-0.5" />}
           </div>
           <div className="text-xs md:text-sm text-gray-500">
             {!weight && 'Toca para registrar'}

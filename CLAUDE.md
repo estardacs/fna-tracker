@@ -28,7 +28,7 @@ This is the most critical architectural concept. There are **two completely sepa
 
 ### Layer 1 — Live Dashboard (`/`)
 - Reads directly from the raw **`metrics`** table for today
-- For **past dates** via `?date=`, `getDailyStats()` first checks `daily_summary`; if found, returns it via `buildStatsFromSummary()` (raw metrics may have been deleted). Falls back to raw metrics if no summary exists.
+- For **past dates** via `?date=`, `getDailyStats()` fetches raw metrics first. If raw metrics exist, processes them fully (chart + logs visible). If no raw metrics, falls back to `daily_summary` via `buildStatsFromSummary()` (aggregate totals only — chart and event log will be empty).
 - `src/lib/data-processor.ts` processes all raw rows in-memory on each request
 - The page has `export const dynamic = 'force-dynamic'` — no caching ever
 - A client component `RealtimeRefresher` calls `router.refresh()` every **30 seconds** to poll for new data
@@ -36,7 +36,7 @@ This is the most critical architectural concept. There are **two completely sepa
 ### Layer 2 — History (`/history`)
 - Reads exclusively from the pre-aggregated **`daily_summary`** table
 - `src/lib/history-processor.ts` queries this table; all periods (weekly/monthly/yearly) use it
-- **Raw `metrics` are deleted after summarization** — historical dates have no raw data
+- **Raw `metrics` are deleted after summarization** — but `daily_summary` now stores `activity_timeline` (24 hourly buckets) and `recent_events` (up to 100 events) so charts and logs remain functional
 - The `/history` page **triggers summarization on every load** by calling the Edge Function directly (`triggerSummarize()`) — ensures yesterday is always summarized before displaying history
 - A Supabase Edge Function (`supabase/functions/summarize-daily/`) can also run nightly (cron) to aggregate yesterday into `daily_summary`, then rolls up into `weekly_summary`, `monthly_summary`, `yearly_summary`
 
@@ -53,7 +53,7 @@ Devices
                         ├──→ weekly_summary ──→ [rolled up, but NOT queried by history-processor]
                         ├──→ monthly_summary  (same — rolled up but not currently read)
                         └──→ yearly_summary   (same — rolled up but not currently read)
-                  (raw metrics deleted after summarization)
+                  (raw metrics deleted — charts/logs preserved in activity_timeline + recent_events)
 ```
 
 ---
