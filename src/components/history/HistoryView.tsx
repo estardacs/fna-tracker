@@ -1,12 +1,13 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { type HistoryPayload, type HistoryItem, type PeriodType } from '@/lib/history-processor';
 import { cn } from '@/lib/utils';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from 'recharts';
-import { format, parseISO, addWeeks, subWeeks, addMonths, subMonths, addYears, subYears, startOfWeek } from 'date-fns';
+import { format, parseISO, addWeeks, subWeeks, addMonths, subMonths, addYears, subYears, startOfWeek, addDays, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Moon, Footprints, Flame } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Moon, Footprints, Flame, UtensilsCrossed, Scale } from 'lucide-react';
 
 // --- Components ---
 
@@ -53,7 +54,8 @@ function DateNavigator({ currentPeriod, anchorDate }: { currentPeriod: PeriodTyp
     const searchParams = useSearchParams();
 
     const navigate = (direction: 'prev' | 'next') => {
-        const date = new Date(anchorDate);
+        // Use noon local time to avoid UTC midnight parsing as the previous day in Santiago timezone
+        const date = parseISO(anchorDate.slice(0, 10) + 'T12:00:00');
         let newDate = date;
 
         if (currentPeriod === 'weekly') {
@@ -70,7 +72,7 @@ function DateNavigator({ currentPeriod, anchorDate }: { currentPeriod: PeriodTyp
     };
 
     const displayLabel = (() => {
-        const d = new Date(anchorDate);
+        const d = parseISO(anchorDate.slice(0, 10) + 'T12:00:00');
         if (currentPeriod === 'weekly') return `Semana del ${format(startOfWeek(d, { weekStartsOn: 1 }), "d 'de' MMM", { locale: es })}`;
         if (currentPeriod === 'monthly') return format(d, "MMMM yyyy", { locale: es });
         return format(d, "yyyy");
@@ -133,9 +135,11 @@ function AggregatedList({ title, data, icon, colorClass }: { title: string, data
 function HistoryCard({ item, period }: { item: HistoryItem, period: PeriodType }) {
     const formatDate = (dateStr: string) => {
         const d = parseISO(dateStr);
-        if (period === 'weekly' || period === 'monthly') return format(d, "EEEE d", { locale: es }); 
-        return `Semana ${format(d, "w")}`; 
+        if (period === 'weekly' || period === 'monthly') return format(d, "EEEE d", { locale: es });
+        return `Semana ${format(d, "w")}`;
     };
+
+    const isDayCard = period === 'weekly' || period === 'monthly';
 
     return (
         <div className="bg-gray-900/40 border border-gray-800/50 rounded-lg p-4 hover:border-gray-700 hover:bg-gray-900/60 transition-all group h-full flex flex-col">
@@ -145,41 +149,71 @@ function HistoryCard({ item, period }: { item: HistoryItem, period: PeriodType }
                     {formatMinutes(item.totalScreenTime)}
                 </span>
             </div>
-            
+
             <div className="flex h-1.5 w-full bg-gray-800 rounded-full overflow-hidden mb-4">
                 <div style={{ width: `${(item.pcMinutes / (item.totalScreenTime || 1)) * 100}%` }} className="bg-blue-500/70" />
                 <div style={{ width: `${(item.mobileMinutes / (item.totalScreenTime || 1)) * 100}%` }} className="bg-purple-500/70" />
             </div>
 
             <div className="space-y-1.5 text-[10px] md:text-xs mt-auto">
-                {item.topApps.slice(0, 3).map((app, i) => (
-                    <div key={i} className="flex justify-between text-gray-500">
-                        <span className="truncate max-w-[110px] md:max-w-[120px]" title={app.name}>{app.name}</span>
-                        <span className="font-mono">{formatMinutes(app.minutes)}</span>
+                {Array.from({ length: 3 }).map((_, i) => {
+                    const app = item.topApps[i];
+                    return app ? (
+                        <div key={i} className="flex justify-between text-gray-500">
+                            <span className="truncate max-w-[110px] md:max-w-[120px]" title={app.name}>{app.name}</span>
+                            <span className="font-mono">{formatMinutes(app.minutes)}</span>
+                        </div>
+                    ) : (
+                        <div key={i} className="flex justify-between text-gray-800">
+                            <span>—</span>
+                            <span className="font-mono">—</span>
+                        </div>
+                    );
+                })}
+                <div className="pt-1.5 border-t border-gray-800/50 mt-1 space-y-1.5">
+                    <div className="flex items-center">
+                        <span className={cn("flex items-center gap-1 w-16 shrink-0", item.sleepMinutes > 0 ? "text-indigo-400/80" : "text-gray-700")}>
+                            <Moon className="w-2.5 h-2.5 shrink-0" />
+                            <span className="truncate">{item.sleepMinutes > 0 ? formatMinutes(item.sleepMinutes) : '—'}</span>
+                        </span>
+                        <span className={cn("flex items-center gap-1 w-12 shrink-0", (item.steps ?? 0) > 0 ? "text-emerald-400/80" : "text-gray-700")}>
+                            <Footprints className="w-2.5 h-2.5 shrink-0" />
+                            <span className="truncate">{(item.steps ?? 0) >= 1000 ? `${((item.steps ?? 0) / 1000).toFixed(1)}k` : (item.steps ?? 0)}</span>
+                        </span>
+                        <span className={cn("flex items-center gap-1 w-14 shrink-0", item.weightKg !== null ? "text-sky-400/80" : "text-gray-700")}>
+                            <Scale className="w-2.5 h-2.5 shrink-0" />
+                            <span className="truncate">{item.weightKg !== null ? `${item.weightKg}kg` : '—'}</span>
+                        </span>
+                        <span className={cn("flex items-center gap-1 w-20 shrink-0", item.calories > 0 ? "text-orange-400/80" : "text-gray-700")}>
+                            <Flame className="w-2.5 h-2.5 shrink-0" />
+                            <span className="truncate">{item.calories > 0 ? `${item.calories.toFixed(0)} kcal` : '— kcal'}</span>
+                        </span>
+                        {isDayCard && item.calories > 0 ? (
+                            <Link href={`/diet?date=${item.dateKey}`} className="flex items-center gap-1 text-amber-500/70 hover:text-amber-400 transition-colors ml-auto shrink-0" title="Ver dieta completa de este día">
+                                <UtensilsCrossed className="w-2.5 h-2.5 shrink-0" />
+                                <span>dieta</span>
+                            </Link>
+                        ) : (
+                            <span className="ml-auto" />
+                        )}
                     </div>
-                ))}
-                {(item.sleepMinutes > 0 || item.steps > 0 || item.calories > 0) && (
-                    <div className="flex gap-3 pt-1.5 border-t border-gray-800/50 mt-1 flex-wrap">
-                        {item.sleepMinutes > 0 && (
-                            <span className="flex items-center gap-1 text-indigo-400/80">
-                                <Moon className="w-2.5 h-2.5" />
-                                {formatMinutes(item.sleepMinutes)}
-                            </span>
-                        )}
-                        {item.steps > 0 && (
-                            <span className="flex items-center gap-1 text-emerald-400/80">
-                                <Footprints className="w-2.5 h-2.5" />
-                                {item.steps >= 1000 ? `${(item.steps / 1000).toFixed(1)}k` : item.steps}
-                            </span>
-                        )}
-                        {item.calories > 0 && (
-                            <span className="flex items-center gap-1 text-orange-400/80">
-                                <Flame className="w-2.5 h-2.5" />
-                                {item.calories.toFixed(0)} kcal
-                            </span>
-                        )}
+                    <div className="space-y-0.5">
+                        {Array.from({ length: 4 }).map((_, i) => {
+                            const f = item.topFoods[i];
+                            return f ? (
+                                <div key={i} className="flex justify-between text-gray-600 text-[9px] md:text-[10px]">
+                                    <span className="truncate max-w-[120px]" title={f.name}>{f.name}</span>
+                                    <span className="font-mono shrink-0 ml-1">{f.cal} kcal</span>
+                                </div>
+                            ) : (
+                                <div key={i} className="flex justify-between text-gray-800 text-[9px] md:text-[10px]">
+                                    <span>—</span>
+                                    <span className="font-mono">—</span>
+                                </div>
+                            );
+                        })}
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );

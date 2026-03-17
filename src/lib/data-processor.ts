@@ -79,12 +79,11 @@ export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
   const now = new Date();
   const zonedNow = toZonedTime(now, TIMEZONE);
   const todayStr = format(zonedNow, 'yyyy-MM-dd');
-  const startOfCurrentWeek = startOfWeek(zonedNow, { weekStartsOn: 1 });
 
-  // Build the 7 date strings for this week
+  // Últimos 7 días (hoy + 6 anteriores), del más antiguo al más reciente
   const weekDates = Array.from({ length: 7 }, (_, i) => {
-    const d = addDays(startOfCurrentWeek, i);
-    return { date: format(d, 'yyyy-MM-dd'), dayName: format(d, 'EEEE', { locale: es }), isFuture: d > zonedNow };
+    const d = subDays(zonedNow, 6 - i);
+    return { date: format(d, 'yyyy-MM-dd'), dayName: format(d, 'EEEE', { locale: es }), isFuture: false };
   });
 
   // Fetch past days from daily_summary in one query (more reliable than raw metrics)
@@ -148,18 +147,6 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
 
   const resolvedDateStr = format(targetDate, 'yyyy-MM-dd');
 
-  // For past dates: try daily_summary first (raw metrics were deleted after summarization)
-  if (!isToday) {
-    const [{ data: summary }, { data: sleepRows }] = await Promise.all([
-      supabase.from('daily_summary').select('*').eq('date', resolvedDateStr).single(),
-      supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
-    ]);
-
-    if (summary) {
-      return buildStatsFromSummary(summary, computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr));
-    }
-  }
-
   const startSantiagoLocal = startOfDay(targetDate);
   const endSantiagoLocal = endOfDay(targetDate);
   const startUtc = fromZonedTime(startSantiagoLocal, TIMEZONE);
@@ -167,14 +154,32 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const startIso = startUtc.toISOString();
   const endIso = endUtc.toISOString();
 
-  // Fetch Data — single query, filter in-memory
+  // Fetch raw metrics and sleep in parallel
   const [{ data: allMetrics }, { data: sleepRows }] = await Promise.all([
     supabase.from('metrics').select('*')
       .in('device_id', ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'oppo-5-lite', 'moon-reader'])
-      .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true }),
+      .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true }).limit(10000),
     supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
   ]);
   const sleepHourly = computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr);
+
+  // For past dates with no raw metrics: fall back to daily_summary (raw data was deleted after summarization)
+  if (!isToday && (!allMetrics || allMetrics.length === 0)) {
+    const { data: summary } = await supabase.from('daily_summary').select('*').eq('date', resolvedDateStr).single();
+    if (summary) {
+      return buildStatsFromSummary(summary, sleepHourly);
+    }
+    return {
+        pcTotalMinutes: 0, mobileTotalMinutes: 0, readingMinutes: 0, screenTimeMinutes: 0, simultaneousMinutes: 0, gamingMinutes: 0,
+        sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
+        booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
+        activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
+        pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
+        locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0 },
+        locationBreakdown: { pc: { office: 0, home: 0, outside: 0 }, mobile: { office: 0, home: 0, outside: 0 }, screenTime: { office: 0, home: 0, outside: 0 } },
+        lastPcStatus: null, lastMobileStatus: null
+    };
+  }
 
   const pcData = (allMetrics || []).filter(r => ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio'].includes(r.device_id));
   const mobileData = (allMetrics || []).filter(r => r.device_id === 'oppo-5-lite');
@@ -331,12 +336,18 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       let durationSec = 0;
       if (nextEvent) {
         let valid = false;
-        if (currentEvent.metadata?.screen_time_today && nextEvent.metadata?.screen_time_today) {
+        const timeDiffSec = (new Date(nextEvent.created_at).getTime() - new Date(currentEvent.created_at).getTime()) / 1000;
+        if (currentEvent.metadata?.screen_time_today != null && nextEvent.metadata?.screen_time_today != null) {
           const t1 = parseFloat(currentEvent.metadata.screen_time_today);
           const t2 = parseFloat(nextEvent.metadata.screen_time_today);
-          if (!isNaN(t1) && !isNaN(t2) && t2 > t1) { durationSec = t2 - t1; valid = true; }
+          if (!isNaN(t1) && !isNaN(t2)) {
+            valid = true;
+            // Cap at timeDiffSec: screen time delta can never exceed elapsed wall-clock time.
+            // When t2 <= t1, phone was locked (stt didn't increase) → 0, not the fallback.
+            if (t2 > t1) durationSec = Math.min(t2 - t1, timeDiffSec);
+          }
         }
-        if (!valid) durationSec = (new Date(nextEvent.created_at).getTime() - new Date(currentEvent.created_at).getTime()) / 1000;
+        if (!valid) durationSec = Math.min(timeDiffSec, 600);
       } else {
         durationSec = isToday ? (new Date().getTime() - new Date(currentEvent.created_at).getTime()) / 1000 : 30;
       }
@@ -508,8 +519,10 @@ function buildStatsFromSummary(s: any, sleepHourly: Record<string, number> = {})
         outside: (pcLoc.outside || 0) + (mobLoc.outside || 0),
       },
     },
-    activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
-    recentEvents: [],
+    activityTimeline: s.activity_timeline?.length > 0
+      ? s.activity_timeline.map((slot: { hour: string; pc: number; mobile: number }) => ({ ...slot, sleep: sleepHourly[slot.hour.slice(0, 2)] || 0 }))
+      : Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
+    recentEvents: s.recent_events || [],
     lastPcStatus: null,
     lastMobileStatus: null,
   };

@@ -50,7 +50,8 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     .from('metrics')
     .select('*')
     .gte('created_at', startIso)
-    .lte('created_at', endIso);
+    .lte('created_at', endIso)
+    .limit(10000);
 
   if (error) {
     console.error('[Summarizer] Error fetching metrics:', error.message);
@@ -154,13 +155,19 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     let durationSec = 0;
     if (nextEvent) {
       let valid = false;
-      if (currentEvent.metadata?.screen_time_today && nextEvent.metadata?.screen_time_today) {
+      const timeDiffSec = (new Date(nextEvent.created_at).getTime() - new Date(currentEvent.created_at).getTime()) / 1000;
+      if (currentEvent.metadata?.screen_time_today != null && nextEvent.metadata?.screen_time_today != null) {
         const t1 = parseFloat(currentEvent.metadata.screen_time_today);
         const t2 = parseFloat(nextEvent.metadata.screen_time_today);
-        if (!isNaN(t1) && !isNaN(t2) && t2 > t1) { durationSec = t2 - t1; valid = true; }
+        if (!isNaN(t1) && !isNaN(t2)) {
+          valid = true;
+          // Cap at timeDiffSec: screen time delta can never exceed elapsed wall-clock time.
+          // When t2 <= t1, phone was locked (stt didn't increase) → 0, not the fallback.
+          if (t2 > t1) durationSec = Math.min(t2 - t1, timeDiffSec);
+        }
       }
       if (!valid) {
-        durationSec = (new Date(nextEvent.created_at).getTime() - new Date(currentEvent.created_at).getTime()) / 1000;
+        durationSec = Math.min(timeDiffSec, 600);
       }
     } else {
       // For the last event of the day in a historical summary, assume a small default duration
@@ -255,6 +262,19 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
 
   const toArray = (map: Map<string, number>) => Array.from(map.entries()).map(([name, minutes]) => ({ name, minutes })).sort((a, b) => b.minutes - a.minutes);
 
+  // Build hourly activity timeline from minuteSlots
+  const timelineData = new Map<string, { pc: number, mobile: number }>();
+  for (let i = 0; i < 24; i++) timelineData.set(i.toString().padStart(2, '0'), { pc: 0, mobile: 0 });
+  minuteSlots.forEach((level, timeKey) => {
+    const hour = timeKey.split(':')[0];
+    const current = timelineData.get(hour)!;
+    if (level >= 2) current.pc++;
+    else if (level === 1) current.mobile++;
+  });
+  const activityTimeline = Array.from(timelineData.entries())
+    .map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile }))
+    .sort((a, b) => a.hour.localeCompare(b.hour));
+
   return {
     pcTotalMinutes: totalPcSeconds / 60,
     mobileTotalMinutes: totalMobileSeconds / 60,
@@ -268,7 +288,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     topMobileApps: toArray(mobileAppsMap),
     locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes },
     locationBreakdown: { pc: locBreakdown.pc, mobile: locBreakdown.mobile },
-    activityTimeline: [], // Not needed for summary
+    activityTimeline,
   };
 }
 
@@ -375,8 +395,8 @@ async function updatePeriodSummary(
 }
 
 
-// Helper: build and insert a daily_summary row for a given dateStr
-async function processDayAndDelete(supabaseAdmin: any, dateStr: string): Promise<boolean> {
+// Helper: build and upsert a daily_summary row for a given dateStr
+async function processDay(supabaseAdmin: any, dateStr: string): Promise<boolean> {
   const stats = await calculateDailyStats(supabaseAdmin, dateStr);
 
   const summaryData = {
@@ -405,21 +425,19 @@ async function processDayAndDelete(supabaseAdmin: any, dateStr: string): Promise
         home: Math.round(stats.locationBreakdown.mobile.home),
         outside: Math.round(stats.locationBreakdown.mobile.outside),
       }
-    }
+    },
+    // Consolidated view data: hourly chart + event log (sufficient to render charts without raw metrics)
+    activity_timeline: stats.activityTimeline.map((slot: any) => ({ hour: slot.hour, pc: slot.pc, mobile: slot.mobile })),
+    recent_events: stats.recentEvents,
   };
 
-  const { error: insertError } = await supabaseAdmin.from('daily_summary').insert(summaryData);
-  if (insertError) {
-    if (insertError.code === '23505') {
-      console.log(`[Summarizer] ${dateStr} already exists, skipping insert.`);
-    } else {
-      throw new Error(`Failed to insert daily summary for ${dateStr}: ${insertError.message}`);
-    }
-  } else {
-    console.log(`[Summarizer] Inserted daily_summary for ${dateStr}.`);
+  const { error: upsertError } = await supabaseAdmin.from('daily_summary').upsert(summaryData, { onConflict: 'date' });
+  if (upsertError) {
+    throw new Error(`Failed to upsert daily summary for ${dateStr}: ${upsertError.message}`);
   }
+  console.log(`[Summarizer] Upserted daily_summary for ${dateStr}.`);
 
-  // Delete raw metrics for this day (correct UTC range derived from Santiago date)
+  // Delete raw metrics now that everything is consolidated into daily_summary
   const targetLocal = toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE);
   const startUtc = fromZonedTime(startOfDay(targetLocal), TIMEZONE).toISOString();
   const endUtc   = fromZonedTime(endOfDay(targetLocal),   TIMEZONE).toISOString();
@@ -502,7 +520,7 @@ Deno.serve(async (req) => {
 
     // Process each pending day
     for (const dateStr of datesToProcess) {
-      await processDayAndDelete(supabaseAdmin, dateStr);
+      await processDay(supabaseAdmin, dateStr);
     }
 
     // Update period summaries for all affected weeks/months/years
