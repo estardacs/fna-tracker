@@ -111,7 +111,7 @@ export default function WeightWidget({ weight, date, isOwner = false }: WeightWi
             <button
               onClick={save}
               disabled={saving}
-              className="flex items-center justify-center w-8 h-8 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg transition-colors cursor-pointer shrink-0"
+              className="flex items-center justify-center w-10 h-10 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg transition-colors cursor-pointer shrink-0"
               title="Guardar (Enter)"
             >
               {saving
@@ -120,7 +120,7 @@ export default function WeightWidget({ weight, date, isOwner = false }: WeightWi
             </button>
             <button
               onClick={cancel}
-              className="flex items-center justify-center w-8 h-8 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 rounded-lg transition-colors cursor-pointer shrink-0"
+              className="flex items-center justify-center w-10 h-10 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 rounded-lg transition-colors cursor-pointer shrink-0"
               title="Cancelar (Esc)"
             >
               <X className="w-3.5 h-3.5" />

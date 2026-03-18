@@ -23,7 +23,7 @@ export default async function Home({
   const isOwner = cookieStore.get('admin_token')?.value === process.env.ADMIN_SECRET;
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
+    <main className="min-h-screen bg-black text-white p-4 sm:p-6 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
       <RealtimeRefresher />
       
       {/* Header */}

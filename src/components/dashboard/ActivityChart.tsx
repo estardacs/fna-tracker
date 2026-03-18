@@ -11,15 +11,15 @@ export default function ActivityChart({ data }: { data: any[] }) {
   }, []);
 
   if (!mounted) {
-    return <div className="h-[300px] w-full bg-gray-900/50 p-4 rounded-xl border border-gray-800 animate-pulse" />;
+    return <div className="h-[220px] md:h-[300px] w-full bg-gray-900/50 p-4 rounded-xl border border-gray-800 animate-pulse" />;
   }
 
   return (
-    <div className="h-[320px] w-full bg-gray-900/50 p-4 rounded-xl border border-gray-800 relative">
+    <div className="h-[220px] md:h-[320px] w-full bg-gray-900/50 p-4 rounded-xl border border-gray-800 relative">
       <h3 className="text-gray-400 text-sm mb-1 font-medium uppercase tracking-wider">Actividad por Hora (Minutos)</h3>
       
       {/* Custom Floating Legend */}
-      <div className="absolute top-2 right-0 left-0 flex justify-center gap-6 text-xs z-10">
+      <div className="absolute top-2 right-0 left-0 flex justify-center gap-3 sm:gap-6 text-xs z-10">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#3b82f6]"></span>
           <span className="text-gray-300">Computador</span>
@@ -35,7 +35,7 @@ export default function ActivityChart({ data }: { data: any[] }) {
       </div>
 
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 5, right: 50, left: -30, bottom: 30 }}>
+        <AreaChart data={data} margin={{ top: 5, right: 10, left: -15, bottom: 30 }}>
           <defs>
             <linearGradient id="colorPc" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>

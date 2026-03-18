@@ -127,7 +127,7 @@ export default function MealSection({ meal, entries, date, isOwner, onRefresh }:
           </div>
           <div className="flex items-center gap-4">
             {totalCal > 0 && (
-              <div className="hidden sm:flex items-center gap-4 text-xs font-mono">
+              <div className="flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono">
                 <span className="text-blue-400">{totalProt.toFixed(0)}g <span className="text-blue-400/40">P</span></span>
                 <span className="text-amber-400">{totalCarbs.toFixed(0)}g <span className="text-amber-400/40">C</span></span>
                 <span className="text-pink-400">{totalFat.toFixed(0)}g <span className="text-pink-400/40">G</span></span>
@@ -188,7 +188,7 @@ export default function MealSection({ meal, entries, date, isOwner, onRefresh }:
                         <button
                           onClick={() => deleteEntry(entry.id)}
                           disabled={deleting === entry.id}
-                          className="p-1.5 rounded-lg text-gray-700 hover:text-red-400 hover:bg-red-500/15 transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                          className="p-1.5 rounded-lg text-gray-700 hover:text-red-400 hover:bg-red-500/15 transition-all cursor-pointer opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 shrink-0"
                         >
                           {deleting === entry.id
                             ? <Loader2 className="w-4 h-4 animate-spin" />

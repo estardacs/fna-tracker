@@ -287,7 +287,7 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
       {/* Chart */}
       <div className="h-[250px] md:h-[350px] bg-gray-900/30 border border-gray-800 rounded-xl p-2 md:p-4 mb-8 relative">
          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={items} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <AreaChart data={items} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                     <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -329,7 +329,7 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
           <div className="h-[160px] bg-gray-900/30 border border-gray-800 rounded-xl p-3 md:p-4 mb-6">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Peso (kg)</p>
             <ResponsiveContainer width="100%" height="85%">
-              <LineChart data={weightPoints} margin={{ top: 4, right: 10, left: -20, bottom: 0 }}>
+              <LineChart data={weightPoints} margin={{ top: 4, right: 10, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} opacity={0.2} />
                 <XAxis
                   dataKey="dateKey"
@@ -364,7 +364,7 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
             {' · '}Grasas <span className="text-rose-400">{Math.round(totals.totalFatG)}g</span>
           </p>
           <ResponsiveContainer width="100%" height="80%">
-            <AreaChart data={items} margin={{ top: 4, right: 10, left: -20, bottom: 0 }}>
+            <AreaChart data={items} margin={{ top: 4, right: 10, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="gProt"  x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22d3ee" stopOpacity={0.4}/><stop offset="95%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient>
                 <linearGradient id="gCarbs" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#fbbf24" stopOpacity={0.4}/><stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/></linearGradient>
@@ -415,7 +415,7 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
         {period === 'weekly' ? 'Días de la Semana' : (period === 'monthly' ? 'Días del Mes' : 'Semanas del Año')}
       </h3>
       {items.length > 0 ? (
-        <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
             {items.map((item) => (
                 <HistoryCard key={item.dateKey} item={item} period={period} />
             ))}

@@ -51,7 +51,7 @@ export default function CalorieRing({ consumed, goal, onGoalSave }: CalorieRingP
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="relative w-40 h-40">
-        <svg className="rotate-[-90deg]" viewBox="0 0 120 120" width="160" height="160">
+        <svg className="rotate-[-90deg] w-full h-full" viewBox="0 0 120 120">
           <circle cx="60" cy="60" r={radius} fill="none" stroke="#1f2937" strokeWidth="10" />
           <circle
             cx="60" cy="60" r={radius}
