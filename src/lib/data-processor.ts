@@ -16,6 +16,7 @@ const formatWifiName = (ssid: string | undefined): string => {
   if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet' || ssid === 'SIN_SSID') return 'Desconocido';
   if (ssid === 'GeCo') return 'Oficina';
   if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'Casa';
+  if (ssid === 'eduroam' || ssid === 'Eduroam') return 'Universidad';
   return 'Desconocido';
 };
 
@@ -53,15 +54,15 @@ export type DashboardStats = {
     type: 'pc' | 'mobile' | 'reading';
     battery?: number;
     wifi?: string;
-    locationType?: 'office' | 'home' | 'outside';
+    locationType?: 'office' | 'home' | 'outside' | 'university';
   }[];
-  locationStats: { officeMinutes: number; homeMinutes: number; outsideMinutes: number };
+  locationStats: { officeMinutes: number; homeMinutes: number; outsideMinutes: number; universityMinutes: number };
   lastPcStatus: { battery: number; wifi: string; lastSeen: string; isCharging: boolean } | null;
   lastMobileStatus: { wifi: string; lastSeen: string } | null;
   locationBreakdown: {
-    pc: { office: number; home: number; outside: number };
-    mobile: { office: number; home: number; outside: number };
-    screenTime: { office: number; home: number; outside: number };
+    pc: { office: number; home: number; outside: number; university: number };
+    mobile: { office: number; home: number; outside: number; university: number };
+    screenTime: { office: number; home: number; outside: number; university: number };
   };
   simultaneousMinutes: number;
   sleepMinutes: number;
@@ -110,6 +111,14 @@ export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
   // Today's stats come from live raw metrics
   const todayStats = await getDailyStats(todayStr);
 
+  // Fallback: past days missing from daily_summary → try raw metrics
+  const missingPastDays = pastDateStrs.filter(d => !summaryMap.has(d));
+  const missingStatsMap = new Map<string, { screenTimeMinutes: number; pcTotalMinutes: number; mobileTotalMinutes: number }>();
+  await Promise.all(missingPastDays.map(async (d) => {
+    const s = await getDailyStats(d);
+    if (s.screenTimeMinutes > 0) missingStatsMap.set(d, { screenTimeMinutes: s.screenTimeMinutes, pcTotalMinutes: s.pcTotalMinutes, mobileTotalMinutes: s.mobileTotalMinutes });
+  }));
+
   return weekDates.map(({ date, dayName, isFuture }) => {
     let screenTimeMinutes = 0, pcTotalMinutes = 0, mobileTotalMinutes = 0;
 
@@ -121,9 +130,16 @@ export async function getWeeklyStats(): Promise<WeeklyDayStat[]> {
       mobileTotalMinutes = todayStats.mobileTotalMinutes;
     } else {
       const row = summaryMap.get(date);
-      screenTimeMinutes  = row?.screentime_minutes   || 0;
-      pcTotalMinutes     = row?.pc_total_minutes     || 0;
-      mobileTotalMinutes = row?.mobile_total_minutes || 0;
+      if (row) {
+        screenTimeMinutes  = row.screentime_minutes   || 0;
+        pcTotalMinutes     = row.pc_total_minutes     || 0;
+        mobileTotalMinutes = row.mobile_total_minutes || 0;
+      } else if (missingStatsMap.has(date)) {
+        const ms = missingStatsMap.get(date)!;
+        screenTimeMinutes  = ms.screenTimeMinutes;
+        pcTotalMinutes     = ms.pcTotalMinutes;
+        mobileTotalMinutes = ms.mobileTotalMinutes;
+      }
     }
 
     let primaryDevice: 'pc' | 'mobile' | 'balanced' = 'balanced';
@@ -175,8 +191,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
         activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
         pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
-        locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0 },
-        locationBreakdown: { pc: { office: 0, home: 0, outside: 0 }, mobile: { office: 0, home: 0, outside: 0 }, screenTime: { office: 0, home: 0, outside: 0 } },
+        locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0, universityMinutes: 0 },
+        locationBreakdown: { pc: { office: 0, home: 0, outside: 0, university: 0 }, mobile: { office: 0, home: 0, outside: 0, university: 0 }, screenTime: { office: 0, home: 0, outside: 0, university: 0 } },
         lastPcStatus: null, lastMobileStatus: null
     };
   }
@@ -192,8 +208,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
           booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
           activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
           pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
-          locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0 },
-          locationBreakdown: { pc: { office: 0, home: 0, outside: 0 }, mobile: { office: 0, home: 0, outside: 0 }, screenTime: { office: 0, home: 0, outside: 0 } },
+          locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0, universityMinutes: 0 },
+          locationBreakdown: { pc: { office: 0, home: 0, outside: 0, university: 0 }, mobile: { office: 0, home: 0, outside: 0, university: 0 }, screenTime: { office: 0, home: 0, outside: 0, university: 0 } },
           lastPcStatus: null, lastMobileStatus: null
       };
   }
@@ -216,14 +232,16 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     }
   };
 
-  const getLocationType = (wifi: string | undefined, deviceId?: string, appName?: string): 'office' | 'home' | 'outside' => {
+  const getLocationType = (wifi: string | undefined, deviceId?: string, appName?: string): 'office' | 'home' | 'outside' | 'university' => {
     const ssid = wifi ? wifi.trim() : '';
     if (deviceId === 'PC Escritorio') {
         if (ssid === 'GeCo') return 'office';
+        if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
         return 'home';
     }
     if (ssid === 'GeCo') return 'office';
     if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'home';
+    if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
     return 'outside';
   };
 
@@ -231,9 +249,9 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const pcAppsMapYoga = new Map<string, number>();
   const pcAppsMapDesktop = new Map<string, number>();
   const unifiedEvents: any[] = [];
-  const locBreakdown = { pc: { office: 0, home: 0, outside: 0 }, mobile: { office: 0, home: 0, outside: 0 }, screenTime: { office: 0, home: 0, outside: 0 } };
-  
-  let rawOfficeMinutes = 0, rawHomeMinutes = 0, rawOutsideMinutes = 0;
+  const locBreakdown = { pc: { office: 0, home: 0, outside: 0, university: 0 }, mobile: { office: 0, home: 0, outside: 0, university: 0 }, screenTime: { office: 0, home: 0, outside: 0, university: 0 } };
+
+  let rawOfficeMinutes = 0, rawHomeMinutes = 0, rawOutsideMinutes = 0, rawUniversityMinutes = 0;
   let lastPcStatus = null, totalPcSeconds = 0, totalGamingSeconds = 0;
   const gamesMap = new Map<string, number>();
 
@@ -281,9 +299,10 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         const activeMin = totalSeconds / 60;
         if (loc === 'office') { rawOfficeMinutes += activeMin; locBreakdown.pc.office += activeMin; }
         else if (loc === 'home') { rawHomeMinutes += activeMin; locBreakdown.pc.home += activeMin; }
+        else if (loc === 'university') { rawUniversityMinutes += activeMin; locBreakdown.pc.university += activeMin; }
         else { rawOutsideMinutes += activeMin; locBreakdown.pc.outside += activeMin; }
         if (details.length > 0) {
-          unifiedEvents.push({ id: row.id, time: row.created_at, device: deviceName + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : ''), detail: details.join(', '), duration: '1m', type: 'pc', battery: row.metadata?.battery_level, wifi: formatWifiName(wifi), locationType: loc });
+          unifiedEvents.push({ id: row.id, time: row.created_at, device: deviceName + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : loc === 'university' ? ' 🎓' : ''), detail: details.join(', '), duration: '1m', type: 'pc', battery: row.metadata?.battery_level, wifi: formatWifiName(wifi), locationType: loc });
         }
       } else {
         if (IGNORED_APPS.includes(row.metadata?.process_name)) continue;
@@ -301,6 +320,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         const loc = getLocationType(wifi, deviceName, row.metadata?.process_name);
         if (loc === 'office') { rawOfficeMinutes += minutes; locBreakdown.pc.office += minutes; }
         else if (loc === 'home') { rawHomeMinutes += minutes; locBreakdown.pc.home += minutes; }
+        else if (loc === 'university') { rawUniversityMinutes += minutes; locBreakdown.pc.university += minutes; }
         else { rawOutsideMinutes += minutes; locBreakdown.pc.outside += minutes; }
         let appName = row.metadata?.process_name;
         const title = row.metadata?.window_title || '';
@@ -365,6 +385,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       const loc = getLocationType(wifi, 'oppo-5-lite', appName);
       if (loc === 'office') { rawOfficeMinutes += durationMin; locBreakdown.mobile.office += durationMin; }
       else if (loc === 'home') { rawHomeMinutes += durationMin; locBreakdown.mobile.home += durationMin; }
+      else if (loc === 'university') { rawUniversityMinutes += durationMin; locBreakdown.mobile.university += durationMin; }
       else if (durationMin > 0) { rawOutsideMinutes += durationMin; locBreakdown.mobile.outside += durationMin; }
 
       if (!IGNORED_APPS.includes(appName)) {
@@ -396,7 +417,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
 
   mobileLogBuffer.forEach((data, timeKey) => {
     const loc = getLocationType(data.wifi, 'oppo-5-lite', data.appName);
-    unifiedEvents.push({ id: new Date(timeKey).getTime(), time: timeKey, device: 'Oppo 5 Lite' + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : ''), detail: data.details.join(', '), duration: formatDurationSec(data.totalSec), type: 'mobile', wifi: formatWifiName(data.wifi), locationType: loc });
+    unifiedEvents.push({ id: new Date(timeKey).getTime(), time: timeKey, device: 'Oppo 5 Lite' + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : loc === 'university' ? ' 🎓' : ''), detail: data.details.join(', '), duration: formatDurationSec(data.totalSec), type: 'mobile', wifi: formatWifiName(data.wifi), locationType: loc });
   });
 
   const timelineData = new Map<string, { pc: number, mobile: number }>();
@@ -419,11 +440,20 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     else booksFinalMap.set(title, { title, percent: 0, timeSpentSec: sec });
   });
 
-  if (booksFinalMap.size === 0 && totalReadingMinutes > 0) {
-    const { data: lastBookData } = await supabase.from('metrics').select('*').eq('device_id', 'moon-reader').lt('created_at', startIso).order('created_at', { ascending: false }).limit(1);
-    if (lastBookData && lastBookData.length > 0) {
-      const lastBook = lastBookData[0], title = cleanBookTitle(lastBook.metadata?.book_title);
-      booksFinalMap.set(title, { title, percent: lastBook.value || 0, timeSpentSec: totalReadingMinutes * 60 });
+  // If books were identified but time attribution failed (moon-reader sync too far from Moon+ events),
+  // assign all reading time to the highest-percent book rather than showing 0m.
+  const totalAttributedSec = Array.from(booksFinalMap.values()).reduce((s, b) => s + b.timeSpentSec, 0);
+  if (totalReadingMinutes > 0 && totalAttributedSec < totalReadingMinutes * 60 * 0.5) {
+    if (booksFinalMap.size > 0) {
+      const mainBook = Array.from(booksFinalMap.values()).sort((a, b) => b.percent - a.percent)[0];
+      mainBook.timeSpentSec = totalReadingMinutes * 60;
+    } else {
+      // No books identified at all — fall back to last known book before this date
+      const { data: lastBookData } = await supabase.from('metrics').select('*').eq('device_id', 'moon-reader').lt('created_at', startIso).order('created_at', { ascending: false }).limit(1);
+      if (lastBookData && lastBookData.length > 0) {
+        const lastBook = lastBookData[0], title = cleanBookTitle(lastBook.metadata?.book_title);
+        booksFinalMap.set(title, { title, percent: lastBook.value || 0, timeSpentSec: totalReadingMinutes * 60 });
+      }
     }
   }
 
@@ -451,8 +481,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile, sleep: sleepHourly[hour] || 0 })).sort((a, b) => a.hour.localeCompare(b.hour)),
     pcAppHistory: { all: toArray(pcAppsMapAll), 'Lenovo Yoga 7 Slim': toArray(pcAppsMapYoga), 'PC Escritorio': toArray(pcAppsMapDesktop) },
     topMobileApps: toArray(mobileAppsMap), recentEvents: unifiedEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 100),
-    locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes },
-    locationBreakdown: { pc: locBreakdown.pc, mobile: locBreakdown.mobile, screenTime: { office: locBreakdown.pc.office + locBreakdown.mobile.office, home: locBreakdown.pc.home + locBreakdown.mobile.home, outside: locBreakdown.pc.outside + locBreakdown.mobile.outside } },
+    locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes, universityMinutes: rawUniversityMinutes },
+    locationBreakdown: { pc: locBreakdown.pc, mobile: locBreakdown.mobile, screenTime: { office: locBreakdown.pc.office + locBreakdown.mobile.office, home: locBreakdown.pc.home + locBreakdown.mobile.home, outside: locBreakdown.pc.outside + locBreakdown.mobile.outside, university: locBreakdown.pc.university + locBreakdown.mobile.university } },
     lastPcStatus, lastMobileStatus
   };
 }
@@ -506,17 +536,19 @@ function buildStatsFromSummary(s: any, sleepHourly: Record<string, number> = {})
     topMobileApps:     mobileApps,
     pcAppHistory: { all: pcApps, 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
     locationStats: {
-      officeMinutes:  s.office_minutes  || 0,
-      homeMinutes:    s.home_minutes    || 0,
-      outsideMinutes: s.outside_minutes || 0,
+      officeMinutes:     s.office_minutes     || 0,
+      homeMinutes:       s.home_minutes       || 0,
+      outsideMinutes:    s.outside_minutes    || 0,
+      universityMinutes: s.university_minutes || 0,
     },
     locationBreakdown: {
-      pc:         { office: pcLoc.office,  home: pcLoc.home,  outside: pcLoc.outside  },
-      mobile:     { office: mobLoc.office, home: mobLoc.home, outside: mobLoc.outside },
+      pc:         { office: pcLoc.office,  home: pcLoc.home,  outside: pcLoc.outside,  university: pcLoc.university  || 0 },
+      mobile:     { office: mobLoc.office, home: mobLoc.home, outside: mobLoc.outside, university: mobLoc.university || 0 },
       screenTime: {
-        office:  (pcLoc.office  || 0) + (mobLoc.office  || 0),
-        home:    (pcLoc.home    || 0) + (mobLoc.home    || 0),
-        outside: (pcLoc.outside || 0) + (mobLoc.outside || 0),
+        office:     (pcLoc.office      || 0) + (mobLoc.office      || 0),
+        home:       (pcLoc.home        || 0) + (mobLoc.home        || 0),
+        outside:    (pcLoc.outside     || 0) + (mobLoc.outside     || 0),
+        university: (pcLoc.university  || 0) + (mobLoc.university  || 0),
       },
     },
     activityTimeline: s.activity_timeline?.length > 0

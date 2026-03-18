@@ -13,7 +13,7 @@ type Event = {
   type: 'pc' | 'mobile' | 'reading';
   battery?: number;
   wifi?: string;
-  locationType?: 'office' | 'home' | 'outside';
+  locationType?: 'office' | 'home' | 'outside' | 'university';
 };
 
 export default function RecentActivity({ events }: { events: Event[] }) {
@@ -79,12 +79,13 @@ export default function RecentActivity({ events }: { events: Event[] }) {
                       {/* Badge de Ubicación Dinámica */}
                       {loc && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${
-                          loc === 'office' ? 'bg-blue-500/10 text-blue-400' : 
-                          loc === 'home' ? 'bg-green-500/10 text-green-400' : 
+                          loc === 'office' ? 'bg-blue-500/10 text-blue-400' :
+                          loc === 'home' ? 'bg-green-500/10 text-green-400' :
+                          loc === 'university' ? 'bg-purple-500/10 text-purple-400' :
                           'bg-orange-500/10 text-orange-400'
                         }`}>
                           <MapPin className="w-3 h-3" />
-                          {loc === 'office' ? 'Oficina' : loc === 'home' ? 'Casa' : 'Fuera'}
+                          {loc === 'office' ? 'Oficina' : loc === 'home' ? 'Casa' : loc === 'university' ? 'U' : 'Fuera'}
                         </span>
                       )}
                     </div>

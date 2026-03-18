@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { type HistoryPayload, type HistoryItem, type PeriodType } from '@/lib/history-processor';
 import { cn } from '@/lib/utils';
-import { XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area } from 'recharts';
+import { XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area, LineChart, Line } from 'recharts';
 import { format, parseISO, addWeeks, subWeeks, addMonths, subMonths, addYears, subYears, startOfWeek, addDays, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Moon, Footprints, Flame, UtensilsCrossed, Scale } from 'lucide-react';
@@ -269,6 +269,13 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
               {totals.totalSteps > 0 && (
                 <SummaryStat label="Pasos" value={totals.totalSteps >= 1000 ? `${(totals.totalSteps / 1000).toFixed(0)}k` : `${totals.totalSteps}`} colorClass="text-emerald-400" />
               )}
+              {totals.avgRhr > 0 && (
+                <SummaryStat label="FC Reposo" value={`${totals.avgRhr} bpm`} colorClass="text-red-400" sub="promedio" />
+              )}
+              {totals.totalCaloriesBurned > 0 && (
+                <SummaryStat label="Kcal Quemadas" value={`${Math.round(totals.totalCaloriesBurned)}`} colorClass="text-rose-400"
+                  sub={`~${Math.round(totals.totalCaloriesBurned / (items.filter(i => i.caloriesBurned > 0).length || 1))}${period === 'yearly' ? '/sem' : '/día'}`} />
+              )}
               <SummaryStat label="En Casa" value={formatMinutes(totals.home)} colorClass="text-emerald-400" />
               <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
               <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
@@ -308,6 +315,88 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
             </AreaChart>
          </ResponsiveContainer>
       </div>
+
+      {/* Weight Trend Chart */}
+      {(() => {
+        const weightPoints = items.filter(i => i.weightKg !== null);
+        if (weightPoints.length < 2) return null;
+        const weights = weightPoints.map(i => i.weightKg as number);
+        const minW = Math.min(...weights);
+        const maxW = Math.max(...weights);
+        const domainMin = Math.floor(minW - 0.5);
+        const domainMax = Math.ceil(maxW + 0.5);
+        return (
+          <div className="h-[160px] bg-gray-900/30 border border-gray-800 rounded-xl p-3 md:p-4 mb-6">
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Peso (kg)</p>
+            <ResponsiveContainer width="100%" height="85%">
+              <LineChart data={weightPoints} margin={{ top: 4, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} opacity={0.2} />
+                <XAxis
+                  dataKey="dateKey"
+                  tickFormatter={(val) => {
+                    const d = parseISO(val);
+                    if (period === 'weekly') return format(d, 'EEE', { locale: es });
+                    if (period === 'monthly') return format(d, 'd', { locale: es });
+                    return format(d, 'MMM', { locale: es });
+                  }}
+                  stroke="#6b7280" fontSize={10} tickLine={false} axisLine={false} dy={8}
+                />
+                <YAxis domain={[domainMin, domainMax]} stroke="#6b7280" fontSize={10} tickLine={false} axisLine={false} tickCount={4} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', color: '#f3f4f6', fontSize: '12px' }}
+                  labelFormatter={(val) => format(parseISO(val), "d MMM yyyy", { locale: es })}
+                  formatter={(val: any) => [`${Number(val).toFixed(1)} kg`, 'Peso']}
+                  cursor={false}
+                />
+                <Line type="monotone" dataKey="weightKg" stroke="#38bdf8" strokeWidth={2} dot={{ r: 3, fill: '#38bdf8', strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
+
+      {/* Macro Trends Chart */}
+      {items.some(i => i.proteinG > 0) && (
+        <div className="h-[200px] bg-gray-900/30 border border-gray-800 rounded-xl p-3 md:p-4 mb-8">
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">
+            Macros — Prot <span className="text-cyan-400">{Math.round(totals.totalProteinG)}g</span>
+            {' · '}Carbs <span className="text-amber-400">{Math.round(totals.totalCarbsG)}g</span>
+            {' · '}Grasas <span className="text-rose-400">{Math.round(totals.totalFatG)}g</span>
+          </p>
+          <ResponsiveContainer width="100%" height="80%">
+            <AreaChart data={items} margin={{ top: 4, right: 10, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gProt"  x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22d3ee" stopOpacity={0.4}/><stop offset="95%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient>
+                <linearGradient id="gCarbs" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#fbbf24" stopOpacity={0.4}/><stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/></linearGradient>
+                <linearGradient id="gFat"   x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#fb7185" stopOpacity={0.4}/><stop offset="95%" stopColor="#fb7185" stopOpacity={0}/></linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} opacity={0.2} />
+              <XAxis
+                dataKey="dateKey"
+                tickFormatter={(val) => {
+                  const d = parseISO(val);
+                  if (period === 'weekly') return format(d, 'EEE', { locale: es });
+                  if (period === 'monthly') return format(d, 'd', { locale: es });
+                  return format(d, 'MMM', { locale: es });
+                }}
+                stroke="#6b7280" fontSize={10} tickLine={false} axisLine={false} dy={8}
+              />
+              <YAxis hide />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', color: '#f3f4f6', fontSize: '11px' }}
+                labelFormatter={(val) => format(parseISO(val), "d MMM yyyy", { locale: es })}
+                formatter={(val: any, name: string | undefined) => {
+                  const labels: Record<string, string> = { proteinG: 'Proteína', carbsG: 'Carbos', fatG: 'Grasas' };
+                  return [`${Math.round(Number(val))}g`, labels[name ?? ''] ?? (name ?? '')];
+                }}
+              />
+              <Area type="monotone" dataKey="proteinG" stroke="#22d3ee" strokeWidth={1.5} fill="url(#gProt)"  />
+              <Area type="monotone" dataKey="carbsG"   stroke="#fbbf24" strokeWidth={1.5} fill="url(#gCarbs)" />
+              <Area type="monotone" dataKey="fatG"     stroke="#fb7185" strokeWidth={1.5} fill="url(#gFat)"   />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Aggregated Detail Section */}
       {(totals.topApps.length > 0 || totals.topGames.length > 0 || totals.topBooks.length > 0) && (

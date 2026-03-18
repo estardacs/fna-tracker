@@ -149,6 +149,9 @@ export async function searchFoodItems(query: string): Promise<FoodItem[]> {
 
 export interface DietDaySummary {
   calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
   topFoods: { name: string; cal: number }[];
 }
 
@@ -158,7 +161,7 @@ export async function getDietDataForRange(startIso: string, endIso: string): Pro
   noStore();
   const { data } = await supabase
     .from('diet_log')
-    .select('date, calories, food_items(name)')
+    .select('date, calories, protein_g, carbs_g, fat_g, food_items(name)')
     .gte('date', startIso)
     .lte('date', endIso);
 
@@ -166,9 +169,12 @@ export async function getDietDataForRange(startIso: string, endIso: string): Pro
   for (const row of (data || []) as any[]) {
     const name: string = row.food_items?.name ?? 'Desconocido';
     const cal = Number(row.calories) || 0;
-    if (!map.has(row.date)) map.set(row.date, { calories: 0, topFoods: [] });
+    if (!map.has(row.date)) map.set(row.date, { calories: 0, proteinG: 0, carbsG: 0, fatG: 0, topFoods: [] });
     const entry = map.get(row.date)!;
-    entry.calories += cal;
+    entry.calories  += cal;
+    entry.proteinG  += Number(row.protein_g) || 0;
+    entry.carbsG    += Number(row.carbs_g)   || 0;
+    entry.fatG      += Number(row.fat_g)     || 0;
     entry.topFoods.push({ name, cal });
   }
   // Sort foods desc by calories, keep top 4 per day

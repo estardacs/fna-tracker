@@ -149,10 +149,11 @@ export default async function DashboardContent({ date, isOwner = false }: Dashbo
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <AppsList title="Historial PC" apps={stats.pcAppHistory} type="pc" />
         <AppsList title="Historial Móvil" apps={stats.topMobileApps} type="mobile" />
-        <LocationCard 
-          officeMinutes={stats.locationStats.officeMinutes} 
+        <LocationCard
+          officeMinutes={stats.locationStats.officeMinutes}
           homeMinutes={stats.locationStats.homeMinutes}
           outsideMinutes={stats.locationStats.outsideMinutes}
+          universityMinutes={stats.locationStats.universityMinutes}
           lastStatus={stats.lastPcStatus}
           lastMobileStatus={stats.lastMobileStatus}
           breakdown={stats.locationBreakdown}

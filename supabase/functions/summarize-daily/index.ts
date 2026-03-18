@@ -85,15 +85,17 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     }
   };
   
-  const getLocationType = (wifi: string | undefined, deviceId?: string): 'office' | 'home' | 'outside' => {
+  const getLocationType = (wifi: string | undefined, deviceId?: string): 'office' | 'home' | 'outside' | 'university' => {
     const ssid = wifi ? wifi.trim() : '';
     if (deviceId === 'PC Escritorio') {
       if (ssid === 'GeCo') return 'office';
+      if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
       return 'home';
     }
     if (!ssid) return 'outside';
     if (ssid === 'GeCo') return 'office';
     if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'home';
+    if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
     return 'outside';
   };
 
@@ -101,8 +103,8 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
   let totalPcSeconds = 0;
   let totalGamingSeconds = 0;
   const gamesMap = new Map<string, number>();
-  const locBreakdown = { pc: { office: 0, home: 0, outside: 0 }, mobile: { office: 0, home: 0, outside: 0 } };
-  let rawOfficeMinutes = 0, rawHomeMinutes = 0, rawOutsideMinutes = 0;
+  const locBreakdown = { pc: { office: 0, home: 0, outside: 0, university: 0 }, mobile: { office: 0, home: 0, outside: 0, university: 0 } };
+  let rawOfficeMinutes = 0, rawHomeMinutes = 0, rawOutsideMinutes = 0, rawUniversityMinutes = 0;
 
   // PC Processing
   pcData.forEach((row: any) => {
@@ -140,6 +142,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     const activeMin = totalSecondsInBatch / 60;
     if (loc === 'office') { rawOfficeMinutes += activeMin; locBreakdown.pc.office += activeMin; }
     else if (loc === 'home') { rawHomeMinutes += activeMin; locBreakdown.pc.home += activeMin; }
+    else if (loc === 'university') { rawUniversityMinutes += activeMin; locBreakdown.pc.university += activeMin; }
     else { rawOutsideMinutes += activeMin; locBreakdown.pc.outside += activeMin; }
   });
 
@@ -188,6 +191,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     const loc = getLocationType(wifi);
     if (loc === 'office') { rawOfficeMinutes += durationMin; locBreakdown.mobile.office += durationMin; }
     else if (loc === 'home') { rawHomeMinutes += durationMin; locBreakdown.mobile.home += durationMin; }
+    else if (loc === 'university') { rawUniversityMinutes += durationMin; locBreakdown.mobile.university += durationMin; }
     else if (durationMin > 0) { rawOutsideMinutes += durationMin; locBreakdown.mobile.outside += durationMin; }
 
     if (!IGNORED_APPS.includes(appName)) {
@@ -286,7 +290,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     booksReadToday: Array.from(booksFinalMap.values()),
     pcAppHistory: { all: toArray(pcAppsMapAll) },
     topMobileApps: toArray(mobileAppsMap),
-    locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes },
+    locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes, universityMinutes: rawUniversityMinutes },
     locationBreakdown: { pc: locBreakdown.pc, mobile: locBreakdown.mobile },
     activityTimeline,
   };
@@ -410,6 +414,7 @@ async function processDay(supabaseAdmin: any, dateStr: string): Promise<boolean>
     office_minutes: Math.round(stats.locationStats.officeMinutes),
     home_minutes: Math.round(stats.locationStats.homeMinutes),
     outside_minutes: Math.round(stats.locationStats.outsideMinutes),
+    university_minutes: Math.round(stats.locationStats.universityMinutes),
     pc_app_summary: Object.fromEntries(stats.pcAppHistory.all.map((app: any) => [app.name, Math.round(app.minutes)])),
     mobile_app_summary: Object.fromEntries(stats.topMobileApps.map((app: any) => [app.name, Math.round(app.minutes)])),
     games_summary: Object.fromEntries(stats.gamesPlayedToday.map((game: any) => [game.title, Math.round(game.timeSpentSec / 60)])),
@@ -419,11 +424,13 @@ async function processDay(supabaseAdmin: any, dateStr: string): Promise<boolean>
         office: Math.round(stats.locationBreakdown.pc.office),
         home: Math.round(stats.locationBreakdown.pc.home),
         outside: Math.round(stats.locationBreakdown.pc.outside),
+        university: Math.round(stats.locationBreakdown.pc.university),
       },
       mobile: {
         office: Math.round(stats.locationBreakdown.mobile.office),
         home: Math.round(stats.locationBreakdown.mobile.home),
         outside: Math.round(stats.locationBreakdown.mobile.outside),
+        university: Math.round(stats.locationBreakdown.mobile.university),
       }
     },
     // Consolidated view data: hourly chart + event log (sufficient to render charts without raw metrics)

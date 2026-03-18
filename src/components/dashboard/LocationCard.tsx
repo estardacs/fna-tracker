@@ -7,6 +7,7 @@ type Props = {
   officeMinutes: number;
   homeMinutes: number;
   outsideMinutes: number;
+  universityMinutes?: number;
   lastStatus: {
     battery: number;
     wifi: string;
@@ -18,27 +19,29 @@ type Props = {
     lastSeen: string;
   } | null;
   breakdown?: {
-    pc: { office: number; home: number; outside: number };
-    mobile: { office: number; home: number; outside: number };
-    screenTime: { office: number; home: number; outside: number };
+    pc: { office: number; home: number; outside: number; university?: number };
+    mobile: { office: number; home: number; outside: number; university?: number };
+    screenTime: { office: number; home: number; outside: number; university?: number };
   };
   screenTimeTotal?: number;
 };
 
-export default function LocationCard({ officeMinutes, homeMinutes, outsideMinutes, lastStatus, lastMobileStatus, screenTimeTotal }: Props) {
-  
+export default function LocationCard({ officeMinutes, homeMinutes, outsideMinutes, universityMinutes = 0, lastStatus, lastMobileStatus, screenTimeTotal }: Props) {
+
   // Calculate Adjustment Ratio if exact total is provided
-  const rawTotal = officeMinutes + homeMinutes + outsideMinutes;
+  const rawTotal = officeMinutes + homeMinutes + outsideMinutes + universityMinutes;
   const ratio = (screenTimeTotal && rawTotal > 0) ? screenTimeTotal / rawTotal : 1;
 
   const adjOffice = officeMinutes * ratio;
   const adjHome = homeMinutes * ratio;
   const adjOutside = outsideMinutes * ratio;
+  const adjUniversity = universityMinutes * ratio;
 
   const data = [
-    { name: 'Oficina', value: adjOffice, color: '#3b82f6' }, 
-    { name: 'Casa', value: adjHome, color: '#10b981' },   
-    { name: 'Fuera', value: adjOutside, color: '#f97316' }, 
+    { name: 'Oficina', value: adjOffice, color: '#3b82f6' },
+    { name: 'Casa', value: adjHome, color: '#10b981' },
+    { name: 'Fuera', value: adjOutside, color: '#f97316' },
+    { name: 'Universidad', value: adjUniversity, color: '#a855f7' },
   ].filter(d => d.value > 0);
 
   const total = screenTimeTotal || rawTotal;
@@ -113,6 +116,7 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
           <LegendItem label="Oficina" value={adjOffice} color="bg-blue-500" total={total} />
           <LegendItem label="Casa" value={adjHome} color="bg-emerald-500" total={total} />
           <LegendItem label="Fuera" value={adjOutside} color="bg-orange-500" total={total} />
+          <LegendItem label="U" value={adjUniversity} color="bg-purple-500" total={total} />
         </div>
 
         {/* Dual Status Footer */}
@@ -121,7 +125,7 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
           {lastStatus && (
             <div className="bg-black/20 rounded-lg px-2 md:px-3 py-1.5 md:py-2 border border-gray-800/50 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className={`p-1 md:p-1.5 rounded-md bg-gray-950 ${lastStatus.wifi === 'Oficina' ? 'text-blue-400' : lastStatus.wifi === 'Desconocido' || lastStatus.wifi === 'Sin SSID' ? 'text-orange-400' : 'text-emerald-400'}`}>
+                <div className={`p-1 md:p-1.5 rounded-md bg-gray-950 ${lastStatus.wifi === 'Oficina' ? 'text-blue-400' : lastStatus.wifi === 'Universidad' ? 'text-purple-400' : lastStatus.wifi === 'Desconocido' || lastStatus.wifi === 'Sin SSID' ? 'text-orange-400' : 'text-emerald-400'}`}>
                   <Wifi className="w-3 h-3 md:w-3.5 md:h-3.5" />
                 </div>
                 <div className="min-w-0">
@@ -141,7 +145,7 @@ export default function LocationCard({ officeMinutes, homeMinutes, outsideMinute
           {/* Mobile Status */}
           {lastMobileStatus && (
             <div className="bg-black/20 rounded-lg px-2 md:px-3 py-1.5 md:py-2 border border-gray-800/50 flex items-center gap-2">
-              <div className={`p-1 md:p-1.5 rounded-md bg-gray-950 ${lastMobileStatus.wifi === 'Oficina' ? 'text-blue-400' : lastMobileStatus.wifi === 'Desconocido' || lastMobileStatus.wifi === 'Sin SSID' ? 'text-orange-400' : 'text-emerald-400'}`}>
+              <div className={`p-1 md:p-1.5 rounded-md bg-gray-950 ${lastMobileStatus.wifi === 'Oficina' ? 'text-blue-400' : lastMobileStatus.wifi === 'Universidad' ? 'text-purple-400' : lastMobileStatus.wifi === 'Desconocido' || lastMobileStatus.wifi === 'Sin SSID' ? 'text-orange-400' : 'text-emerald-400'}`}>
                 <Wifi className="w-3 h-3 md:w-3.5 md:h-3.5" />
               </div>
               <div className="min-w-0">

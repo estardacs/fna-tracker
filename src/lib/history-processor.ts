@@ -21,8 +21,13 @@ export interface HistoryItem {
   sleepMinutes: number;
   steps: number | null; // null = sin fila en health_daily_metrics; 0 = fila existe pero sin pasos
   calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
   topFoods: { name: string; cal: number }[];
   weightKg: number | null;
+  rhr: number | null;
+  caloriesBurned: number;
 }
 
 export interface HistoryPayload {
@@ -48,6 +53,11 @@ export interface HistoryPayload {
     totalSteps: number;
     totalCalories: number;
     avgCalories: number;
+    totalProteinG: number;
+    totalCarbsG: number;
+    totalFatG: number;
+    totalCaloriesBurned: number;
+    avgRhr: number;
   }
 }
 
@@ -75,7 +85,7 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
     ? toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE)
     : toZonedTime(new Date(), TIMEZONE);
 
-  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0 };
+  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, avgRhr: 0 };
 
   if (period === 'yearly') {
     return getYearlyFromDailySummary(date);
@@ -92,7 +102,7 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
 
   const [screenRes, metricsRes, sleepRes, dietForRange, weightRes, weightBeforeRes] = await Promise.all([
     supabase.from('daily_summary').select('*').gte('date', startIso).lte('date', endIso).order('date', { ascending: true }),
-    supabase.from('health_daily_metrics').select('date, step_count').gte('date', startIso).lte('date', endIso),
+    supabase.from('health_daily_metrics').select('date, step_count, resting_heart_rate, calories_burned').gte('date', startIso).lte('date', endIso),
     supabase.from('health_sleep_sessions').select('date, duration_minutes').gte('date', startIso).lte('date', endIso).gte('duration_minutes', 60),
     getDietDataForRange(startIso, endIso),
     supabase.from('health_weight_log').select('weight_kg, created_at').gte('created_at', periodStartUtc).lte('created_at', periodEndUtc).order('created_at', { ascending: true }),
@@ -105,7 +115,9 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
   }
 
   // Build health lookups per date
-  const stepsMap = new Map<string, number>((metricsRes.data || []).map((r: any) => [r.date, r.step_count || 0]));
+  const stepsMap          = new Map<string, number>((metricsRes.data || []).map((r: any) => [r.date, r.step_count       || 0]));
+  const rhrMap            = new Map<string, number>((metricsRes.data || []).filter((r: any) => r.resting_heart_rate).map((r: any) => [r.date, r.resting_heart_rate]));
+  const caloriesBurnedMap = new Map<string, number>((metricsRes.data || []).filter((r: any) => r.calories_burned).map((r: any) => [r.date, r.calories_burned]));
   const sleepMap = new Map<string, number>();
   for (const s of (sleepRes.data || []) as any[]) {
     const prev = sleepMap.get(s.date) ?? 0;
@@ -134,6 +146,21 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
   const todayInRange = todayStr >= startIso && todayStr <= endIso;
   const todayStats = todayInRange ? await getDailyStats(todayStr) : null;
 
+  // Fallback: for days in range that appear via diet/sleep/health but have no daily_summary,
+  // try loading raw metrics so they don't show as 0 screen time.
+  const daysInRange = new Set<string>();
+  for (let d = new Date(startIso + 'T12:00:00'); format(d, 'yyyy-MM-dd') <= endIso; d.setDate(d.getDate() + 1)) {
+    daysInRange.add(format(d, 'yyyy-MM-dd'));
+  }
+  const missingDays = Array.from(daysInRange).filter(d => d !== todayStr && !screenRowMap.has(d));
+  const missingStatsMap = new Map<string, Awaited<ReturnType<typeof getDailyStats>>>();
+  await Promise.all(missingDays.map(async (d) => {
+    const s = await getDailyStats(d);
+    if (s.screenTimeMinutes > 0 || s.readingMinutes > 0 || s.gamingMinutes > 0) {
+      missingStatsMap.set(d, s);
+    }
+  }));
+
   // Union of ALL dates that have any data
   const allDates = new Set<string>([
     ...(screenRes.data || []).map((r: any) => r.date as string),
@@ -141,6 +168,7 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
     ...Array.from(stepsMap.keys()),
     ...Array.from(sleepMap.keys()),
     ...(todayInRange ? [todayStr] : []),
+    ...Array.from(missingStatsMap.keys()), // days with raw metrics but no daily_summary
   ]);
   const sortedDates = Array.from(allDates).sort();
 
@@ -162,6 +190,10 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       readMin    = todayStats.readingMinutes;
       gameMin    = todayStats.gamingMinutes;
       localApps  = todayStats.pcAppHistory.all.slice(0, 3);
+      // Bug fix: include today's data in weekly/monthly aggregates
+      mergeSummaries(aggApps,  Object.fromEntries(todayStats.pcAppHistory.all.map(a => [a.name, a.minutes])));
+      mergeSummaries(aggGames, Object.fromEntries(todayStats.gamesPlayedToday.map(g => [g.title, Math.round(g.timeSpentSec / 60)])));
+      mergeSummaries(aggBooks, Object.fromEntries(todayStats.booksReadToday.map(b => [b.title, Math.round(b.timeSpentSec / 60)])));
     } else if (row) {
       screenTime = row.screentime_minutes || 0;
       pcMin      = row.pc_total_minutes   || 0;
@@ -174,6 +206,17 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       mergeSummaries(aggApps,  row.mobile_app_summary);
       mergeSummaries(aggGames, row.games_summary);
       mergeSummaries(aggBooks, row.books_summary);
+    } else if (missingStatsMap.has(date)) {
+      const ms = missingStatsMap.get(date)!;
+      screenTime = ms.screenTimeMinutes;
+      pcMin      = ms.pcTotalMinutes;
+      mobileMin  = ms.mobileTotalMinutes;
+      readMin    = ms.readingMinutes;
+      gameMin    = ms.gamingMinutes;
+      localApps  = ms.pcAppHistory.all.slice(0, 3);
+      mergeSummaries(aggApps,  Object.fromEntries(ms.pcAppHistory.all.map(a => [a.name, a.minutes])));
+      mergeSummaries(aggGames, Object.fromEntries(ms.gamesPlayedToday.map(g => [g.title, Math.round(g.timeSpentSec / 60)])));
+      mergeSummaries(aggBooks, Object.fromEntries(ms.booksReadToday.map(b => [b.title, Math.round(b.timeSpentSec / 60)])));
     }
 
     const dietDay = dietMap.get(date);
@@ -189,8 +232,13 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       sleepMinutes: sleepMap.get(date) ?? 0,
       steps: stepsMap.has(date) ? (stepsMap.get(date) ?? 0) : null,
       calories: dietDay?.calories ?? 0,
+      proteinG: dietDay?.proteinG ?? 0,
+      carbsG: dietDay?.carbsG ?? 0,
+      fatG: dietDay?.fatG ?? 0,
       topFoods: dietDay?.topFoods ?? [],
       weightKg: weightMap.get(date) ?? null,
+      rhr: rhrMap.get(date) ?? null,
+      caloriesBurned: caloriesBurnedMap.get(date) ?? 0,
     };
   });
 
@@ -218,20 +266,27 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       totalSleepMinutes: acc.totalSleepMinutes + item.sleepMinutes,
       totalSteps: acc.totalSteps + (item.steps ?? 0),
       totalCalories: acc.totalCalories + item.calories,
+      totalProteinG: acc.totalProteinG + item.proteinG,
+      totalCarbsG: acc.totalCarbsG + item.carbsG,
+      totalFatG: acc.totalFatG + item.fatG,
+      totalCaloriesBurned: acc.totalCaloriesBurned + item.caloriesBurned,
+      rhrSum: acc.rhrSum + (item.rhr ?? 0),
+      rhrCount: acc.rhrCount + (item.rhr !== null ? 1 : 0),
     };
-  }, { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0 });
+  }, { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, rhrSum: 0, rhrCount: 0 });
 
   const daysWithSleep = items.filter(i => i.sleepMinutes > 0).length;
   const avgSleepMinutes = daysWithSleep > 0 ? Math.round(totals.totalSleepMinutes / daysWithSleep) : 0;
   const daysWithCalories = items.filter(i => i.calories > 0).length;
   const avgCalories = daysWithCalories > 0 ? Math.round(totals.totalCalories / daysWithCalories) : 0;
+  const avgRhr = totals.rhrCount > 0 ? Math.round(totals.rhrSum / totals.rhrCount) : 0;
 
   return {
     period,
     dateLabel: startIso,
     requestDate: format(date, 'yyyy-MM-dd'),
     items,
-    totals: { ...totals, avgSleepMinutes, avgCalories, topApps: toSortedArray(aggApps, 10), topGames: toSortedArray(aggGames, 5), topBooks: toSortedArray(aggBooks, 5) },
+    totals: { ...totals, avgSleepMinutes, avgCalories, avgRhr, topApps: toSortedArray(aggApps, 10), topGames: toSortedArray(aggGames, 5), topBooks: toSortedArray(aggBooks, 5) },
   };
 }
 
@@ -243,14 +298,14 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
   const startIso  = format(startDate, 'yyyy-MM-dd');
   const endIso    = format(endDate,   'yyyy-MM-dd');
 
-  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0 };
+  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, avgRhr: 0 };
 
   const yearStartUtc = fromZonedTime(parseISO(startIso + 'T00:00:00'), TIMEZONE).toISOString();
   const yearEndUtc   = fromZonedTime(parseISO(endIso   + 'T23:59:59'), TIMEZONE).toISOString();
 
   const [{ data, error }, { data: stepsData }, { data: sleepData }, dietMapY, { data: weightDataY }, { data: weightBeforeY }] = await Promise.all([
     supabase.from('daily_summary').select('*').gte('date', startIso).lte('date', endIso).order('date', { ascending: true }),
-    supabase.from('health_daily_metrics').select('date, step_count').gte('date', startIso).lte('date', endIso),
+    supabase.from('health_daily_metrics').select('date, step_count, resting_heart_rate, calories_burned').gte('date', startIso).lte('date', endIso),
     supabase.from('health_sleep_sessions').select('date, duration_minutes').gte('date', startIso).lte('date', endIso).gte('duration_minutes', 60),
     getDietDataForRange(startIso, endIso),
     supabase.from('health_weight_log').select('weight_kg, created_at').gte('created_at', yearStartUtc).lte('created_at', yearEndUtc).order('created_at', { ascending: true }),
@@ -262,7 +317,9 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
     return { period: 'yearly', dateLabel: 'Error', requestDate: date.toISOString(), items: [], totals: emptyTotals };
   }
 
-  const stepsMap = new Map<string, number>((stepsData || []).map((r: any) => [r.date, r.step_count || 0]));
+  const stepsMap          = new Map<string, number>((stepsData || []).map((r: any) => [r.date, r.step_count       || 0]));
+  const rhrMapY           = new Map<string, number>((stepsData || []).filter((r: any) => r.resting_heart_rate).map((r: any) => [r.date, r.resting_heart_rate]));
+  const caloriesBurnedMapY = new Map<string, number>((stepsData || []).filter((r: any) => r.calories_burned).map((r: any) => [r.date, r.calories_burned]));
   const sleepMapY = new Map<string, number>();
   for (const s of (sleepData || []) as any[]) {
     const prev = sleepMapY.get(s.date) ?? 0;
@@ -310,13 +367,14 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
   const aggApps: Record<string, number> = {};
   const aggGames: Record<string, number> = {};
   const aggBooks: Record<string, number> = {};
-  let yearTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0 };
+  let yearTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, rhrSum: 0, rhrCount: 0 };
 
   const items: HistoryItem[] = Array.from(weekMap.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([weekStart, dates]) => {
       const weekAggApps: Record<string, number> = {};
       let wScreen = 0, wPc = 0, wMobile = 0, wReading = 0, wGaming = 0, wSleep = 0, wSteps = 0, wCalories = 0;
+      let wProtein = 0, wCarbs = 0, wFat = 0, wCalBurned = 0, wRhrSum = 0, wRhrCount = 0;
       let wWeight: number | null = null;
       const weekFoodsAgg: Record<string, number> = {};
 
@@ -329,6 +387,10 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
           wMobile  += todayStatsY.mobileTotalMinutes  || 0;
           wReading += todayStatsY.readingMinutes       || 0;
           wGaming  += todayStatsY.gamingMinutes        || 0;
+          // Bug fix: merge today into yearly aggregates
+          mergeSummaries(aggApps,  Object.fromEntries(todayStatsY.pcAppHistory.all.map(a => [a.name, a.minutes])));
+          mergeSummaries(aggGames, Object.fromEntries(todayStatsY.gamesPlayedToday.map(g => [g.title, Math.round(g.timeSpentSec / 60)])));
+          mergeSummaries(aggBooks, Object.fromEntries(todayStatsY.booksReadToday.map(b => [b.title, Math.round(b.timeSpentSec / 60)])));
         } else if (row) {
           wScreen  += row.screentime_minutes   || 0;
           wPc      += row.pc_total_minutes     || 0;
@@ -349,7 +411,14 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
         wSleep  += sleepMapY.get(date) ?? 0;
         wSteps  += stepsMap.get(date)  ?? 0;
         const dayDiet = dietMapY.get(date);
-        wCalories += dayDiet?.calories ?? 0;
+        wCalories += dayDiet?.calories  ?? 0;
+        wProtein  += dayDiet?.proteinG  ?? 0;
+        wCarbs    += dayDiet?.carbsG    ?? 0;
+        wFat      += dayDiet?.fatG      ?? 0;
+        const dayCal = caloriesBurnedMapY.get(date);
+        if (dayCal) wCalBurned += dayCal;
+        const dayRhr = rhrMapY.get(date);
+        if (dayRhr) { wRhrSum += dayRhr; wRhrCount++; }
         for (const f of (dayDiet?.topFoods ?? [])) {
           weekFoodsAgg[f.name] = (weekFoodsAgg[f.name] ?? 0) + f.cal;
         }
@@ -357,14 +426,20 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
         if (dayWeight !== undefined) wWeight = dayWeight; // last reading of the week
       }
 
-      yearTotals.screenTime        += wScreen;
-      yearTotals.pc                += wPc;
-      yearTotals.mobile            += wMobile;
-      yearTotals.reading           += wReading;
-      yearTotals.gaming            += wGaming;
-      yearTotals.totalSleepMinutes += wSleep;
-      yearTotals.totalSteps        += wSteps;
-      yearTotals.totalCalories     += wCalories;
+      yearTotals.screenTime          += wScreen;
+      yearTotals.pc                  += wPc;
+      yearTotals.mobile              += wMobile;
+      yearTotals.reading             += wReading;
+      yearTotals.gaming              += wGaming;
+      yearTotals.totalSleepMinutes   += wSleep;
+      yearTotals.totalSteps          += wSteps;
+      yearTotals.totalCalories       += wCalories;
+      yearTotals.totalProteinG       += wProtein;
+      yearTotals.totalCarbsG         += wCarbs;
+      yearTotals.totalFatG           += wFat;
+      yearTotals.totalCaloriesBurned += wCalBurned;
+      yearTotals.rhrSum              += wRhrSum;
+      yearTotals.rhrCount            += wRhrCount;
 
       const topFoodsWeek = Object.entries(weekFoodsAgg)
         .map(([name, cal]) => ({ name, cal }))
@@ -383,8 +458,13 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
         sleepMinutes: wSleep,
         steps: dates.some(d => stepsMap.has(d)) ? wSteps : null,
         calories: wCalories,
+        proteinG: wProtein,
+        carbsG: wCarbs,
+        fatG: wFat,
         topFoods: topFoodsWeek,
         weightKg: wWeight,
+        rhr: wRhrCount > 0 ? Math.round(wRhrSum / wRhrCount) : null,
+        caloriesBurned: wCalBurned,
       };
     });
 
@@ -392,12 +472,13 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
   const avgSleepMinutes = weeksWithSleep > 0 ? Math.round(yearTotals.totalSleepMinutes / weeksWithSleep) : 0;
   const weeksWithCalories = items.filter(i => i.calories > 0).length;
   const avgCalories = weeksWithCalories > 0 ? Math.round(yearTotals.totalCalories / weeksWithCalories) : 0;
+  const avgRhr = yearTotals.rhrCount > 0 ? Math.round(yearTotals.rhrSum / yearTotals.rhrCount) : 0;
 
   return {
     period: 'yearly',
     dateLabel: startIso,
     requestDate: date.toISOString(),
     items,
-    totals: { ...yearTotals, avgSleepMinutes, avgCalories, topApps: toSortedArray(aggApps, 10), topGames: toSortedArray(aggGames, 5), topBooks: toSortedArray(aggBooks, 5) },
+    totals: { ...yearTotals, avgSleepMinutes, avgCalories, avgRhr, topApps: toSortedArray(aggApps, 10), topGames: toSortedArray(aggGames, 5), topBooks: toSortedArray(aggBooks, 5) },
   };
 }
