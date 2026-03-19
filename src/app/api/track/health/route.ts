@@ -54,7 +54,13 @@ export async function POST(request: Request) {
 
       case 'sleep': {
         // Upsert por (date, start_time) para evitar duplicados cuando WorkManager re-ejecuta
-        const sleepDate = data.date || todayStr;
+        // La fecha se deriva del end_time (hora de despertar en Santiago), no de hoy,
+        // porque el sueño puede sincronizarse días después o a medianoche
+        let sleepDate = data.date;
+        if (!sleepDate && data.end_time) {
+          sleepDate = format(toZonedTime(new Date(data.end_time), TIMEZONE), 'yyyy-MM-dd');
+        }
+        sleepDate = sleepDate || todayStr;
         const { error } = await supabase
           .from('health_sleep_sessions')
           .upsert(
