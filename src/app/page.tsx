@@ -30,9 +30,15 @@ export default async function Home({
       <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-6">
         <div className="w-full md:w-auto">
           <div className="flex items-center justify-between md:justify-start gap-3 mb-2">
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Fña Tracker
-            </h1>
+            <img src="/sand-clock.svg" alt="" aria-hidden="true" className="w-10 h-10 md:w-12 md:h-12 flex-shrink-0" />
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-[length:200%_auto] bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-gradient leading-none">
+                Fña Tracker
+              </h1>
+              <p className="text-[10px] tracking-[0.25em] text-gray-600 uppercase mt-1">
+                Panel de vida personal
+              </p>
+            </div>
           </div>
         </div>
         

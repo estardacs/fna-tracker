@@ -276,9 +276,15 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
                 <SummaryStat label="Kcal Quemadas" value={`${Math.round(totals.totalCaloriesBurned)}`} colorClass="text-rose-400"
                   sub={`~${Math.round(totals.totalCaloriesBurned / (items.filter(i => i.caloriesBurned > 0).length || 1))}${period === 'yearly' ? '/sem' : '/día'}`} />
               )}
-              <SummaryStat label="En Casa" value={formatMinutes(totals.home)} colorClass="text-emerald-400" />
-              <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
-              <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
+              {totals.home > 0 && (
+                <SummaryStat label="En Casa" value={formatMinutes(totals.home)} colorClass="text-emerald-400" />
+              )}
+              {totals.office > 0 && (
+                <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
+              )}
+              {totals.outside > 0 && (
+                <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
+              )}
             </div>
           </>
         );
