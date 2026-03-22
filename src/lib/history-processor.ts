@@ -253,6 +253,11 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       officeMin  = row.office_minutes  || 0;
       homeMin    = row.home_minutes    || 0;
       outsideMin = row.outside_minutes || 0;
+    } else if (missingStatsMap.has(item.dateKey)) {
+      const ms = missingStatsMap.get(item.dateKey)!;
+      officeMin  = ms.locationStats.officeMinutes;
+      homeMin    = ms.locationStats.homeMinutes;
+      outsideMin = ms.locationStats.outsideMinutes;
     }
     return {
       screenTime: acc.screenTime + item.totalScreenTime,
