@@ -74,18 +74,22 @@ export default async function HistoryPage({
 
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
-       <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-4">
-        <div className="w-full">
-          <Link href="/" className="text-sm text-blue-400 hover:text-blue-300 transition-colors mb-4 inline-flex items-center gap-1">
-            <span className="text-lg">←</span> Volver al Dashboard
-          </Link>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-green-400 to-teal-400 bg-clip-text text-transparent">
-            Historial de Datos
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Análisis de tendencias a largo plazo.
-          </p>
-        </div>
+      <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-6">
+        <Link href="/" className="w-full md:w-auto group">
+          <div className="flex items-center justify-between md:justify-start gap-3 mb-2">
+            <div className="p-1.5 rounded-xl bg-gradient-to-br from-violet-500/15 to-indigo-500/15 border border-violet-500/20 flex-shrink-0 group-hover:border-violet-500/40 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 md:w-9 md:h-9 text-violet-400" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-[length:200%_auto] bg-gradient-to-r from-violet-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent animate-gradient leading-none">
+                Historial de Datos
+              </h1>
+              <p className="text-[10px] tracking-[0.25em] text-gray-600 uppercase mt-1 group-hover:text-gray-500 transition-colors">
+                Patrones · Tendencias · Progreso
+              </p>
+            </div>
+          </div>
+        </Link>
       </header>
 
       <Suspense key={`${period}-${dateStr}`} fallback={<HistorySkeleton />}>

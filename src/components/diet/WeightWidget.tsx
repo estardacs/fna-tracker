@@ -125,7 +125,7 @@ export default function WeightWidget({ weight, date, isOwner = false }: WeightWi
             >
               <X className="w-3.5 h-3.5" />
             </button>
-            <span className="text-[10px] text-gray-600 ml-1">Enter para guardar</span>
+            <span className="text-[10px] text-gray-600 ml-1">Enter Para Guardar</span>
           </div>
         </div>
       ) : (
@@ -144,9 +144,9 @@ export default function WeightWidget({ weight, date, isOwner = false }: WeightWi
             {isOwner && <Pencil className="w-3 h-3 text-gray-700 group-hover:text-gray-500 transition-colors ml-auto shrink-0 mb-0.5" />}
           </div>
           <div className="text-xs md:text-sm text-gray-500">
-            {!weight && 'Toca para registrar'}
-            {weight && !stale && (weight.bodyFatPct ? `${weight.bodyFatPct}% grasa` : 'registrado hoy')}
-            {stale && `hace ${weight.daysAgo}d · toca para actualizar`}
+            {!weight && 'Toca Para Registrar'}
+            {weight && !stale && (weight.bodyFatPct ? `${weight.bodyFatPct}% Grasa` : 'Registrado Hoy')}
+            {stale && `Hace ${weight.daysAgo}d · Toca Para Actualizar`}
           </div>
         </div>
       )}

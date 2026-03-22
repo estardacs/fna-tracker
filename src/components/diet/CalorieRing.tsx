@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 interface CalorieRingProps {
   consumed: number;
   goal: number;
-  onGoalSave?: (kcal: number) => Promise<void>;
+  onGoalSave?: (Kcal: number) => Promise<void>;
 }
 
 export default function CalorieRing({ consumed, goal, onGoalSave }: CalorieRingProps) {
@@ -29,10 +29,10 @@ export default function CalorieRing({ consumed, goal, onGoalSave }: CalorieRingP
   };
 
   const commit = async () => {
-    const kcal = parseInt(draft, 10);
-    if (!kcal || kcal === goal || !onGoalSave) { setEditing(false); return; }
+    const Kcal = parseInt(draft, 10);
+    if (!Kcal || Kcal === goal || !onGoalSave) { setEditing(false); return; }
     setSaving(true);
-    await onGoalSave(kcal);
+    await onGoalSave(Kcal);
     setEditing(false);
     setSaving(false);
   };
@@ -117,7 +117,7 @@ export default function CalorieRing({ consumed, goal, onGoalSave }: CalorieRingP
             </button>
           )}
 
-          <span>kcal</span>
+          <span>Kcal</span>
         </div>
       </div>
     </div>

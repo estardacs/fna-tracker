@@ -2,10 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Lock, LockOpen, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 
 export default function AuthButton({ isOwner }: { isOwner: boolean }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -26,29 +24,24 @@ export default function AuthButton({ isOwner }: { isOwner: boolean }) {
     });
     setLoading(false);
     if (res.ok) {
-      setOpen(false);
-      setPassword('');
-      router.refresh();
+      window.location.reload();
     } else {
       setError('Contraseña incorrecta');
     }
   };
 
-  const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.refresh();
-  };
-
   if (isOwner) {
     return (
-      <button
-        onClick={logout}
-        title="Cerrar sesión"
-        className="flex items-center gap-1.5 text-xs text-emerald-400/70 hover:text-emerald-400 transition-colors cursor-pointer"
-      >
-        <LockOpen className="w-4 h-4" />
-        <span className="hidden sm:inline">Tuyo</span>
-      </button>
+      <form action="/api/auth/logout" method="post">
+        <button
+          type="submit"
+          title="Cerrar sesión"
+          className="flex items-center gap-1.5 text-xs text-emerald-400/70 hover:text-emerald-400 transition-colors cursor-pointer"
+        >
+          <LockOpen className="w-4 h-4" />
+          <span className="hidden sm:inline">Tuyo</span>
+        </button>
+      </form>
     );
   }
 

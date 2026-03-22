@@ -186,12 +186,12 @@ function HistoryCard({ item, period }: { item: HistoryItem, period: PeriodType }
                         </span>
                         <span className={cn("flex items-center gap-1 w-20 shrink-0", item.calories > 0 ? "text-orange-400/80" : "text-gray-700")}>
                             <Flame className="w-2.5 h-2.5 shrink-0" />
-                            <span className="truncate">{item.calories > 0 ? `${item.calories.toFixed(0)} kcal` : '— kcal'}</span>
+                            <span className="truncate">{item.calories > 0 ? `${item.calories.toFixed(0)} Kcal` : '— Kcal'}</span>
                         </span>
                         {isDayCard && item.calories > 0 ? (
                             <Link href={`/diet?date=${item.dateKey}`} className="flex items-center gap-1 text-amber-500/70 hover:text-amber-400 transition-colors ml-auto shrink-0" title="Ver dieta completa de este día">
                                 <UtensilsCrossed className="w-2.5 h-2.5 shrink-0" />
-                                <span>dieta</span>
+                                <span>Dieta</span>
                             </Link>
                         ) : (
                             <span className="ml-auto" />
@@ -203,7 +203,7 @@ function HistoryCard({ item, period }: { item: HistoryItem, period: PeriodType }
                             return f ? (
                                 <div key={i} className="flex justify-between text-gray-600 text-[9px] md:text-[10px]">
                                     <span className="truncate max-w-[120px]" title={f.name}>{f.name}</span>
-                                    <span className="font-mono shrink-0 ml-1">{f.cal} kcal</span>
+                                    <span className="font-mono shrink-0 ml-1">{f.cal} Kcal</span>
                                 </div>
                             ) : (
                                 <div key={i} className="flex justify-between text-gray-800 text-[9px] md:text-[10px]">
@@ -263,14 +263,14 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
                   sub={`~${formatMinutes(Math.round(totals.totalSleepMinutes / dSl))}${period === 'yearly' ? '/sem' : '/noche'}`} />
               )}
               {totals.totalCalories > 0 && (
-                <SummaryStat label="Calorías" value={`${totals.totalCalories.toFixed(0)} kcal`} colorClass="text-orange-400"
-                  sub={`~${Math.round(totals.totalCalories / dCal)} kcal${pl}`} />
+                <SummaryStat label="Calorías" value={`${totals.totalCalories.toFixed(0)} Kcal`} colorClass="text-orange-400"
+                  sub={`~${Math.round(totals.totalCalories / dCal)} Kcal${pl}`} />
               )}
               {totals.totalSteps > 0 && (
                 <SummaryStat label="Pasos" value={totals.totalSteps >= 1000 ? `${(totals.totalSteps / 1000).toFixed(0)}k` : `${totals.totalSteps}`} colorClass="text-emerald-400" />
               )}
               {totals.avgRhr > 0 && (
-                <SummaryStat label="FC Reposo" value={`${totals.avgRhr} bpm`} colorClass="text-red-400" sub="promedio" />
+                <SummaryStat label="FC Reposo" value={`${totals.avgRhr} BPM`} colorClass="text-red-400" sub="Promedio" />
               )}
               {totals.totalCaloriesBurned > 0 && (
                 <SummaryStat label="Kcal Quemadas" value={`${Math.round(totals.totalCaloriesBurned)}`} colorClass="text-rose-400"
@@ -281,6 +281,9 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
               )}
               {totals.office > 0 && (
                 <SummaryStat label="En Oficina" value={formatMinutes(totals.office)} colorClass="text-blue-500" />
+              )}
+              {totals.university > 0 && (
+                <SummaryStat label="En U" value={formatMinutes(totals.university)} colorClass="text-purple-400" />
               )}
               {totals.outside > 0 && (
                 <SummaryStat label="Fuera" value={formatMinutes(totals.outside)} colorClass="text-orange-400" />
@@ -293,7 +296,7 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
       {/* Chart */}
       <div className="h-[250px] md:h-[350px] bg-gray-900/30 border border-gray-800 rounded-xl p-2 md:p-4 mb-8 relative">
          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={items} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <AreaChart data={items} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
                 <defs>
                     <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -301,15 +304,15 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
                     </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} opacity={0.2} />
-                <XAxis 
-                    dataKey="dateKey" 
+                <XAxis
+                    dataKey="dateKey"
                     tickFormatter={(val) => {
                         const d = parseISO(val);
                         if (period === 'weekly') return format(d, 'EEE', { locale: es });
                         if (period === 'monthly') return format(d, 'd', { locale: es });
                         return format(d, 'MMM', { locale: es });
                     }}
-                    stroke="#6b7280" fontSize={10} tickLine={false} axisLine={false} dy={10} 
+                    stroke="#6b7280" fontSize={10} tickLine={false} axisLine={false}
                 />
                 <YAxis hide />
                 <Tooltip 
@@ -428,7 +431,7 @@ export default function HistoryView({ data }: { data: HistoryPayload }) {
         </div>
       ) : (
         <div className="text-center py-16 text-gray-500 border border-dashed border-gray-800 rounded-xl bg-gray-900/20">
-            No hay registros para este periodo.
+            No Hay Registros Para Este Periodo.
         </div>
       )}
 

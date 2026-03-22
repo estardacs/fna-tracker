@@ -80,7 +80,7 @@ function MacroRow({ food, grams }: { food: FoodItem; grams: number }) {
   return (
     <div className="flex gap-2 flex-wrap mt-1.5 text-[10px] font-mono">
       <span className="bg-orange-500/10 text-orange-400 px-1.5 py-0.5 rounded">
-        {Math.round(food.calories_per_100g * f)} kcal
+        {Math.round(food.calories_per_100g * f)} Kcal
       </span>
       <span className="bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">
         P {(food.protein_per_100g * f).toFixed(1)}g
@@ -246,7 +246,7 @@ function SearchTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
           <div className="font-medium text-white text-sm">{selected.name}</div>
           {selected.brand && <div className="text-[10px] text-gray-500">{selected.brand}</div>}
           <div className="text-[10px] text-gray-600 mt-0.5">
-            {selected.calories_per_100g.toFixed(0)} kcal / 100g
+            {selected.calories_per_100g.toFixed(0)} Kcal / 100g
           </div>
         </div>
 
@@ -348,7 +348,7 @@ function FoodRow({ item, onSelect, onDelete }: { item: FoodItem; onSelect: () =>
       </div>
       <div className="flex items-center gap-2 shrink-0 ml-3">
         <span className="text-xs text-gray-500 font-mono">
-          {item.calories_per_100g?.toFixed(0) ?? '—'} kcal/100g
+          {item.calories_per_100g?.toFixed(0) ?? '—'} Kcal/100g
         </span>
         {onDelete && (
           <button
@@ -674,7 +674,7 @@ function ScanTab({ meal, date, onAdded }: { meal: string; date: string; onAdded:
       <div className="space-y-3">
         {/* Total preview */}
         <div className="flex items-center gap-3 px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg">
-          <span className="text-sm font-bold font-mono text-gray-100">{Math.round(totalKcal)} kcal</span>
+          <span className="text-sm font-bold font-mono text-gray-100">{Math.round(totalKcal)} Kcal</span>
           <span className="text-xs text-gray-500 font-mono">{totalProt.toFixed(1)}g P</span>
           <span className="text-xs text-gray-600 font-mono">{totalCarbs.toFixed(1)}g C</span>
           <span className="text-xs text-gray-600 font-mono">{totalFat.toFixed(1)}g G</span>
@@ -1193,7 +1193,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
                   />
                   <span className="text-[10px] text-gray-600">g</span>
                   <span className="text-[10px] text-gray-500 font-mono w-11 text-right shrink-0">
-                    {(item.food.calories_per_100g * item.grams / 100).toFixed(0)} kcal
+                    {(item.food.calories_per_100g * item.grams / 100).toFixed(0)} Kcal
                   </span>
                   <button onClick={() => removeItemFromCombo(item.food.id)} className="text-gray-700 hover:text-red-400 cursor-pointer transition-colors shrink-0">
                     <X className="w-3 h-3" />
@@ -1203,7 +1203,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
             </div>
             {/* Total */}
             <div className="flex items-center gap-3 px-2.5 py-1.5 bg-gray-900/40 border border-gray-800/50 rounded-lg">
-              <span className="text-xs font-bold font-mono text-gray-200">{Math.round(totalKcal)} kcal</span>
+              <span className="text-xs font-bold font-mono text-gray-200">{Math.round(totalKcal)} Kcal</span>
               <span className="text-xs text-gray-500 font-mono">{totalProt.toFixed(1)}g P</span>
             </div>
           </div>
@@ -1249,7 +1249,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
               >
                 <span className="text-sm text-gray-200 truncate">{food.name}</span>
                 <div className="flex items-center gap-2 shrink-0 ml-2">
-                  <span className="text-[10px] text-gray-500 font-mono">{food.calories_per_100g} kcal/100g</span>
+                  <span className="text-[10px] text-gray-500 font-mono">{food.calories_per_100g} Kcal/100g</span>
                   <Plus className="w-3.5 h-3.5 text-gray-600" />
                 </div>
               </button>
@@ -1326,7 +1326,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
               <div>
                 <div className="text-sm font-medium text-gray-200">{combo.name}</div>
                 <div className="text-[10px] text-gray-500 font-mono mt-0.5">
-                  {Math.round(totalKcal)} kcal · {combo.combo_items.length} items
+                  {Math.round(totalKcal)} Kcal · {combo.combo_items.length} items
                   {combo.use_count > 0 && ` · usado ${combo.use_count}×`}
                 </div>
               </div>
@@ -1354,7 +1354,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
                 <div className="border-t border-gray-800/40 px-4 py-3 space-y-2">
                   {combo.combo_items.map((ci) => {
                     const g = getGrams(combo.id, ci.id, ci.grams_consumed);
-                    const kcal = (ci.food_items.calories_per_100g * g / 100).toFixed(0);
+                    const Kcal = (ci.food_items.calories_per_100g * g / 100).toFixed(0);
                     return (
                       <div key={ci.id} className="flex items-center gap-3">
                         <span className="text-xs text-gray-300 flex-1 truncate">{ci.food_items.name}</span>
@@ -1367,7 +1367,7 @@ function CombosTab({ meal, date, onAdded }: { meal: string; date: string; onAdde
                           onClick={(e) => e.stopPropagation()}
                         />
                         <span className="text-[10px] text-gray-600">g</span>
-                        <span className="text-[10px] text-gray-500 font-mono w-14 text-right">{kcal} kcal</span>
+                        <span className="text-[10px] text-gray-500 font-mono w-14 text-right">{Kcal} Kcal</span>
                       </div>
                     );
                   })}

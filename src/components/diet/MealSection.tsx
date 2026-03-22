@@ -131,7 +131,7 @@ export default function MealSection({ meal, entries, date, isOwner, onRefresh }:
                 <span className="text-blue-400">{totalProt.toFixed(0)}g <span className="text-blue-400/40">P</span></span>
                 <span className="text-amber-400">{totalCarbs.toFixed(0)}g <span className="text-amber-400/40">C</span></span>
                 <span className="text-pink-400">{totalFat.toFixed(0)}g <span className="text-pink-400/40">G</span></span>
-                <span className="text-gray-300 font-semibold text-sm">{totalCal.toFixed(0)} <span className="text-gray-600 font-normal text-xs">kcal</span></span>
+                <span className="text-gray-300 font-semibold text-sm">{totalCal.toFixed(0)} <span className="text-gray-600 font-normal text-xs">Kcal</span></span>
               </div>
             )}
             {isOwner && (
@@ -180,7 +180,7 @@ export default function MealSection({ meal, entries, date, isOwner, onRefresh }:
                       {/* Kcal */}
                       <div className="text-right shrink-0 w-16">
                         <p className="text-base font-mono font-semibold text-gray-200 tabular-nums leading-tight">{entry.calories.toFixed(0)}</p>
-                        <p className="text-[10px] text-gray-600">kcal</p>
+                        <p className="text-[10px] text-gray-600">Kcal</p>
                       </div>
 
                       {/* Delete — solo owner */}
@@ -219,7 +219,7 @@ export default function MealSection({ meal, entries, date, isOwner, onRefresh }:
                       </div>
                       <div className="text-right shrink-0 w-16">
                         <p className="text-base font-mono font-semibold text-gray-300 tabular-nums leading-tight">{totalCal.toFixed(0)}</p>
-                        <p className="text-[10px] text-gray-600">kcal</p>
+                        <p className="text-[10px] text-gray-600">Kcal</p>
                       </div>
                       <div className="w-7 shrink-0" />
                     </li>

@@ -80,7 +80,7 @@ export default function WorkoutCard({ workouts, requestedDate }: Props) {
                       className={`text-[10px] font-mono flex items-center gap-0.5 ${w.caloriesEstimated ? 'text-gray-600' : 'text-gray-500'}`}
                       title={w.caloriesEstimated ? 'Estimado (MET)' : 'Reportado por dispositivo'}
                     >
-                      <Flame className="w-2.5 h-2.5 text-orange-400" />{w.caloriesBurned} kcal
+                      <Flame className="w-2.5 h-2.5 text-orange-400" />{w.caloriesBurned} Kcal
                     </span>
                   )}
                   {w.avgHeartRate && (

@@ -110,7 +110,7 @@ export default async function DashboardContent({ date, isOwner = false }: Dashbo
           title="Sueño"
           value={stats.sleepMinutes > 0 ? formatDuration(stats.sleepMinutes) : '—'}
           icon={<Moon className="text-indigo-400 w-4 h-4 md:w-6 md:h-6" />}
-          subtext={stats.sleepMinutes > 0 ? 'horas dormidas' : 'Sin datos'}
+          subtext={stats.sleepMinutes > 0 ? 'Horas de Sueño' : 'Sin datos'}
         />
         <KpiCard 
           title="Tiempo en PC" 
@@ -172,14 +172,14 @@ export default async function DashboardContent({ date, isOwner = false }: Dashbo
             title="Pasos"
             value={health.steps >= 1000 ? `${(health.steps / 1000).toFixed(1)}k` : `${health.steps}`}
             icon={<Footprints className="text-emerald-400 w-4 h-4 md:w-5 md:h-5" />}
-            subtext={health.steps > 0 ? `${Math.round((health.steps / 8000) * 100)}% de meta` : 'sin datos hoy'}
+            subtext={health.steps > 0 ? 'Pasos Hoy' : 'Sin Datos Hoy'}
           />
           {health.heartRate.avg > 0 && (
             <KpiCard
               title="Frec. Cardíaca"
               value={`${health.heartRate.avg}`}
               icon={<Heart className="text-rose-400 w-4 h-4 md:w-5 md:h-5" />}
-              subtext={health.heartRate.timeline.length > 0 ? `bpm prom · reposo ${health.heartRate.resting || '—'}` : 'bpm en reposo'}
+              subtext={health.heartRate.timeline.length > 0 ? `BPM prom · reposo ${health.heartRate.resting || '—'}` : 'BPM en Reposo'}
             />
           )}
           {health.caloriesBurned > 0 && (
@@ -187,7 +187,7 @@ export default async function DashboardContent({ date, isOwner = false }: Dashbo
               title="Calorías"
               value={`${health.caloriesBurned}`}
               icon={<Zap className="text-orange-400 w-4 h-4 md:w-5 md:h-5" />}
-              subtext="kcal quemadas"
+              subtext="Kcal Quemadas"
             />
           )}
           <WeightWidget

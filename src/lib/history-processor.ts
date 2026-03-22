@@ -45,6 +45,7 @@ export interface HistoryPayload {
     office: number;
     home: number;
     outside: number;
+    university: number;
     topApps: { name: string; minutes: number }[];
     topGames: { name: string; minutes: number }[];
     topBooks: { name: string; minutes: number }[];
@@ -85,7 +86,7 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
     ? toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE)
     : toZonedTime(new Date(), TIMEZONE);
 
-  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, avgRhr: 0 };
+  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, university: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, avgRhr: 0 };
 
   if (period === 'yearly') {
     return getYearlyFromDailySummary(date);
@@ -244,23 +245,26 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
 
   const totals = items.reduce((acc, item) => {
     const row = screenRowMap.get(item.dateKey);
-    let officeMin = 0, homeMin = 0, outsideMin = 0;
+    let officeMin = 0, homeMin = 0, outsideMin = 0, universityMin = 0;
     if (item.dateKey === todayStr && todayStats) {
-      officeMin  = todayStats.locationStats.officeMinutes;
-      homeMin    = todayStats.locationStats.homeMinutes;
-      outsideMin = todayStats.locationStats.outsideMinutes;
+      officeMin     = todayStats.locationStats.officeMinutes;
+      homeMin       = todayStats.locationStats.homeMinutes;
+      outsideMin    = todayStats.locationStats.outsideMinutes;
+      universityMin = todayStats.locationStats.universityMinutes;
     } else if (row) {
-      const rawLoc = (row.office_minutes || 0) + (row.home_minutes || 0) + (row.outside_minutes || 0);
+      const rawLoc = (row.office_minutes || 0) + (row.home_minutes || 0) + (row.outside_minutes || 0) + (row.university_minutes || 0);
       const screentime = row.screentime_minutes || 0;
       const ratio = rawLoc > 0 && screentime > 0 ? screentime / rawLoc : 0;
-      officeMin  = Math.round((row.office_minutes  || 0) * ratio);
-      homeMin    = Math.round((row.home_minutes    || 0) * ratio);
-      outsideMin = Math.round((row.outside_minutes || 0) * ratio);
+      officeMin     = Math.round((row.office_minutes     || 0) * ratio);
+      homeMin       = Math.round((row.home_minutes       || 0) * ratio);
+      outsideMin    = Math.round((row.outside_minutes    || 0) * ratio);
+      universityMin = Math.round((row.university_minutes || 0) * ratio);
     } else if (missingStatsMap.has(item.dateKey)) {
       const ms = missingStatsMap.get(item.dateKey)!;
-      officeMin  = ms.locationStats.officeMinutes;
-      homeMin    = ms.locationStats.homeMinutes;
-      outsideMin = ms.locationStats.outsideMinutes;
+      officeMin     = ms.locationStats.officeMinutes;
+      homeMin       = ms.locationStats.homeMinutes;
+      outsideMin    = ms.locationStats.outsideMinutes;
+      universityMin = ms.locationStats.universityMinutes;
     }
     return {
       screenTime: acc.screenTime + item.totalScreenTime,
@@ -268,9 +272,10 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       mobile: acc.mobile + item.mobileMinutes,
       reading: acc.reading + item.readingMinutes,
       gaming: acc.gaming + item.gamingMinutes,
-      office:  acc.office  + officeMin,
-      home:    acc.home    + homeMin,
-      outside: acc.outside + outsideMin,
+      office:     acc.office     + officeMin,
+      home:       acc.home       + homeMin,
+      outside:    acc.outside    + outsideMin,
+      university: acc.university + universityMin,
       totalSleepMinutes: acc.totalSleepMinutes + item.sleepMinutes,
       totalSteps: acc.totalSteps + (item.steps ?? 0),
       totalCalories: acc.totalCalories + item.calories,
@@ -281,7 +286,7 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       rhrSum: acc.rhrSum + (item.rhr ?? 0),
       rhrCount: acc.rhrCount + (item.rhr !== null ? 1 : 0),
     };
-  }, { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, rhrSum: 0, rhrCount: 0 });
+  }, { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, university: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, rhrSum: 0, rhrCount: 0 });
 
   const daysWithSleep = items.filter(i => i.sleepMinutes > 0).length;
   const avgSleepMinutes = daysWithSleep > 0 ? Math.round(totals.totalSleepMinutes / daysWithSleep) : 0;
@@ -306,7 +311,7 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
   const startIso  = format(startDate, 'yyyy-MM-dd');
   const endIso    = format(endDate,   'yyyy-MM-dd');
 
-  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, avgRhr: 0 };
+  const emptyTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, university: 0, topApps: [], topGames: [], topBooks: [], totalSleepMinutes: 0, avgSleepMinutes: 0, totalSteps: 0, totalCalories: 0, avgCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, avgRhr: 0 };
 
   const yearStartUtc = fromZonedTime(parseISO(startIso + 'T00:00:00'), TIMEZONE).toISOString();
   const yearEndUtc   = fromZonedTime(parseISO(endIso   + 'T23:59:59'), TIMEZONE).toISOString();
@@ -375,7 +380,7 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
   const aggApps: Record<string, number> = {};
   const aggGames: Record<string, number> = {};
   const aggBooks: Record<string, number> = {};
-  let yearTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, rhrSum: 0, rhrCount: 0 };
+  let yearTotals = { screenTime: 0, pc: 0, mobile: 0, reading: 0, gaming: 0, office: 0, home: 0, outside: 0, university: 0, totalSleepMinutes: 0, totalSteps: 0, totalCalories: 0, totalProteinG: 0, totalCarbsG: 0, totalFatG: 0, totalCaloriesBurned: 0, rhrSum: 0, rhrCount: 0 };
 
   const items: HistoryItem[] = Array.from(weekMap.entries())
     .sort(([a], [b]) => a.localeCompare(b))
@@ -405,9 +410,10 @@ async function getYearlyFromDailySummary(date: Date): Promise<HistoryPayload> {
           wMobile  += row.mobile_total_minutes || 0;
           wReading += row.reading_minutes      || 0;
           wGaming  += row.gaming_minutes       || 0;
-          yearTotals.office  += row.office_minutes  || 0;
-          yearTotals.home    += row.home_minutes    || 0;
-          yearTotals.outside += row.outside_minutes || 0;
+          yearTotals.office     += row.office_minutes     || 0;
+          yearTotals.home       += row.home_minutes       || 0;
+          yearTotals.outside    += row.outside_minutes    || 0;
+          yearTotals.university += row.university_minutes || 0;
           mergeSummaries(aggApps,     row.pc_app_summary);
           mergeSummaries(aggApps,     row.mobile_app_summary);
           mergeSummaries(aggGames,    row.games_summary);

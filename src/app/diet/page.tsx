@@ -78,7 +78,8 @@ export default async function DietPage({
   const targetDate = params.date;
 
   const cookieStore = await cookies();
-  const isOwner = cookieStore.get('admin_token')?.value === process.env.ADMIN_SECRET;
+  const secret = process.env.ADMIN_SECRET;
+  const isOwner = !!secret && cookieStore.get('admin_token')?.value === secret;
 
   const displayDate = targetDate
     ? format(new Date(targetDate + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })
@@ -86,17 +87,23 @@ export default async function DietPage({
 
   return (
     <main className="min-h-screen bg-black text-white p-4 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
-      <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-4">
-        <div className="w-full md:w-auto">
-          <Link href="/" className="text-sm text-blue-400 hover:text-blue-300 transition-colors mb-4 inline-flex items-center gap-1">
-            <span className="text-lg">←</span> Volver al Dashboard
-          </Link>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent">
-            Registro de Dieta
-          </h1>
-          <p className="text-gray-500 text-sm mt-1 capitalize">{displayDate}</p>
-        </div>
-        <div className="flex items-center gap-4">
+      <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-6">
+        <Link href="/" className="w-full md:w-auto group">
+          <div className="flex items-center justify-between md:justify-start gap-3 mb-2">
+            <div className="p-1.5 rounded-xl bg-gradient-to-br from-orange-500/15 to-rose-500/15 border border-orange-500/20 flex-shrink-0 group-hover:border-orange-500/40 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 md:w-9 md:h-9 text-orange-400" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
+            </div>
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-[length:200%_auto] bg-gradient-to-r from-orange-400 via-rose-400 to-pink-400 bg-clip-text text-transparent animate-gradient leading-none">
+                Registro de Dieta
+              </h1>
+              <p className="text-[10px] tracking-[0.25em] text-gray-600 uppercase mt-1 capitalize group-hover:text-gray-500 transition-colors">
+                {displayDate}
+              </p>
+            </div>
+          </div>
+        </Link>
+        <div className="flex items-center gap-4 w-full md:w-auto">
           <AuthButton isOwner={isOwner} />
           <DietDateNavigator />
         </div>
