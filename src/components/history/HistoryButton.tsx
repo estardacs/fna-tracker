@@ -20,7 +20,7 @@ export default function HistoryButton() {
       onClick={handleClick}
       disabled={isPending}
       className={cn(
-        "group relative inline-flex items-center justify-center gap-2 w-36 py-2 text-sm font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 hover:border-blue-500/40 transition-all duration-300 cursor-pointer",
+        "group relative inline-flex items-center justify-center gap-2 flex-1 md:flex-none md:w-36 py-2 text-sm font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 hover:border-blue-500/40 transition-all duration-300 cursor-pointer",
         isPending && "opacity-70 cursor-wait"
       )}
     >
@@ -30,7 +30,7 @@ export default function HistoryButton() {
           <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
         </span>
       )}
-      <span>{isPending ? 'Cargando...' : 'Ver Historial'}</span>
+      <span>{isPending ? 'Cargando...' : <><span className="hidden sm:inline">Ver </span>Historial</>}</span>
       
       {/* Tooltip hint - shown on hover */}
       <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-max px-2 py-1 bg-gray-900 border border-gray-800 text-xs text-gray-400 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">

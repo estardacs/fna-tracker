@@ -15,7 +15,7 @@ export default function ActivityChart({ data }: { data: any[] }) {
   }
 
   return (
-    <div className="h-[220px] md:h-[320px] w-full bg-gray-900/50 p-4 rounded-xl border border-gray-800 relative">
+    <div className="h-[220px] md:h-[320px] w-full bg-gray-900/50 p-4 rounded-xl border border-gray-800 relative overflow-hidden">
       <h3 className="text-gray-400 text-sm mb-1 font-medium uppercase tracking-wider">Actividad por Hora (Minutos)</h3>
       
       {/* Custom Floating Legend */}

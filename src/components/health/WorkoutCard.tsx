@@ -8,6 +8,7 @@ type Workout = {
   displayName: string;
   durationMinutes: number;
   caloriesBurned: number;
+  caloriesEstimated: boolean;
   avgHeartRate: number | null;
   maxHeartRate: number | null;
   distanceKm: number | null;
@@ -75,7 +76,10 @@ export default function WorkoutCard({ workouts, requestedDate }: Props) {
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                   <span className="text-[10px] text-gray-500 font-mono">{formatDuration(w.durationMinutes)}</span>
                   {w.caloriesBurned > 0 && (
-                    <span className="text-[10px] text-gray-500 font-mono flex items-center gap-0.5">
+                    <span
+                      className={`text-[10px] font-mono flex items-center gap-0.5 ${w.caloriesEstimated ? 'text-gray-600' : 'text-gray-500'}`}
+                      title={w.caloriesEstimated ? 'Estimado (MET)' : 'Reportado por dispositivo'}
+                    >
                       <Flame className="w-2.5 h-2.5 text-orange-400" />{w.caloriesBurned} kcal
                     </span>
                   )}

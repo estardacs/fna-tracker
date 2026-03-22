@@ -5,6 +5,48 @@ import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 
 const TIMEZONE = 'America/Santiago';
 
+// MET values (Ainsworth Compendium) — used when calories_burned is not reported by device
+const WORKOUT_MET: Record<string, number> = {
+  climbing: 7.5,
+  indoor_climbing: 7.5,
+  bouldering: 8.3,
+  swimming: 5.8,
+  running: 8.0,
+  walking: 3.5,
+  cycling: 7.5,
+  biking: 7.5,
+  strength_training: 3.5,
+  weightlifting: 3.5,
+  yoga: 2.5,
+  hiking: 5.3,
+  basketball: 6.5,
+  football: 7.0,
+  soccer: 7.0,
+  tennis: 7.3,
+  boxing: 12.8,
+  dancing: 4.8,
+  pilates: 3.0,
+  martial_arts: 5.3,
+};
+
+// Estimate calories using Keytel formula (HR-based) or MET fallback
+function estimateCalories(
+  durationSeconds: number,
+  activityType: string,
+  weightKg: number,
+  avgHeartRate?: number | null
+): number {
+  const hours = durationSeconds / 3600;
+  if (avgHeartRate && avgHeartRate > 0) {
+    // Keytel et al. (male formula): kcal/min = (-55.0969 + 0.6309×HR + 0.1988×weight + 0.2017×30) / 4.184
+    // Using 30 as age estimate since we don't store it
+    const kcalPerMin = (-55.0969 + 0.6309 * avgHeartRate + 0.1988 * weightKg + 0.2017 * 30) / 4.184;
+    return Math.max(0, Math.round(kcalPerMin * (durationSeconds / 60)));
+  }
+  const met = WORKOUT_MET[activityType?.toLowerCase()] ?? 4.0;
+  return Math.round(met * weightKg * hours);
+}
+
 const WORKOUT_DISPLAY_NAMES: Record<string, string> = {
   climbing: 'Escalada',
   indoor_climbing: 'Escalada Indoor',
@@ -33,6 +75,7 @@ export type WorkoutEntry = {
   displayName: string;
   durationMinutes: number;
   caloriesBurned: number;
+  caloriesEstimated: boolean; // true = calculado, false = reportado por dispositivo
   avgHeartRate: number | null;
   maxHeartRate: number | null;
   distanceKm: number | null;
@@ -165,19 +208,27 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
       : null;
 
   // Workouts — if none for the requested date, fall back to the most recent within 14 days
-  const mapWorkout = (w: any): WorkoutEntry => ({
-    type: w.activity_type || '',
-    displayName:
-      WORKOUT_DISPLAY_NAMES[(w.activity_type || '').toLowerCase()] ||
-      w.activity_type ||
-      'Entrenamiento',
-    durationMinutes: w.duration_seconds ? Math.round(w.duration_seconds / 60) : 0,
-    caloriesBurned: w.calories_burned || 0,
-    avgHeartRate: w.avg_heart_rate || null,
-    maxHeartRate: w.max_heart_rate || null,
-    distanceKm: w.distance_meters ? Math.round(w.distance_meters / 100) / 10 : null,
-    dateStr: format(toZonedTime(new Date(w.start_time), TIMEZONE), 'yyyy-MM-dd'),
-  });
+  const weightKg = latestWeight?.weight_kg ?? 70;
+  const mapWorkout = (w: any): WorkoutEntry => {
+    const reported = w.calories_burned ?? 0;
+    const caloriesBurned = reported > 0
+      ? reported
+      : estimateCalories(w.duration_seconds || 0, w.activity_type, weightKg, w.avg_heart_rate);
+    return {
+      type: w.activity_type || '',
+      displayName:
+        WORKOUT_DISPLAY_NAMES[(w.activity_type || '').toLowerCase()] ||
+        w.activity_type ||
+        'Entrenamiento',
+      durationMinutes: w.duration_seconds ? Math.round(w.duration_seconds / 60) : 0,
+      caloriesBurned,
+      caloriesEstimated: reported === 0,
+      avgHeartRate: w.avg_heart_rate || null,
+      maxHeartRate: w.max_heart_rate || null,
+      distanceKm: w.distance_meters ? Math.round(w.distance_meters / 100) / 10 : null,
+      dateStr: format(toZonedTime(new Date(w.start_time), TIMEZONE), 'yyyy-MM-dd'),
+    };
+  };
 
   let workouts: WorkoutEntry[] = (workoutsRes.data || []).map(mapWorkout);
 

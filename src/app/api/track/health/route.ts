@@ -72,10 +72,13 @@ export async function POST(request: Request) {
       }
 
       case 'workout': {
-        // Insert sesión de entrenamiento
+        // Upsert por start_time para evitar duplicados cuando WorkManager re-ejecuta
         const { error } = await supabase
           .from('health_workouts')
-          .insert({ ...data, metadata: data.metadata || {} });
+          .upsert(
+            { ...data, metadata: data.metadata || {} },
+            { onConflict: 'start_time' }
+          );
         if (error) throw error;
         break;
       }
