@@ -89,7 +89,7 @@ export default async function DietPage({
     <main className="min-h-screen bg-black text-white p-4 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
       <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-6">
         <Link href="/" className="w-full md:w-auto group">
-          <div className="flex items-center justify-between md:justify-start gap-3 mb-2">
+          <div className="flex items-center gap-3 mb-2">
             <div className="p-1.5 rounded-xl bg-gradient-to-br from-orange-500/15 to-rose-500/15 border border-orange-500/20 flex-shrink-0 group-hover:border-orange-500/40 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 md:w-9 md:h-9 text-orange-400" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
             </div>
@@ -103,7 +103,7 @@ export default async function DietPage({
             </div>
           </div>
         </Link>
-        <div className="flex items-center gap-4 w-full md:w-auto">
+        <div className="flex items-center justify-between md:justify-end gap-2 md:gap-4 w-full md:w-auto">
           <AuthButton isOwner={isOwner} />
           <DietDateNavigator />
         </div>

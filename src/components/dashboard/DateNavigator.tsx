@@ -29,9 +29,9 @@ export default function DateNavigator() {
 
   return (
     <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg border border-gray-800 shrink-0">
-      <button 
+      <button
         onClick={() => navigate('prev')}
-        className="p-3 hover:bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors cursor-pointer"
+        className="p-2 hover:bg-gray-800 rounded-md text-gray-400 hover:text-white transition-colors cursor-pointer"
         title="Día anterior"
       >
         <ChevronLeft className="w-4 h-4" />
@@ -48,10 +48,10 @@ export default function DateNavigator() {
         </span>
       </button>
 
-      <button 
+      <button
         onClick={() => navigate('next')}
         disabled={isToday} // No viajar al futuro
-        className={`p-3 rounded-md transition-colors cursor-pointer ${
+        className={`p-2 rounded-md transition-colors cursor-pointer ${
           isToday 
             ? 'text-gray-700 cursor-not-allowed' 
             : 'hover:bg-gray-800 text-gray-400 hover:text-white'

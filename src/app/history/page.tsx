@@ -76,7 +76,7 @@ export default async function HistoryPage({
     <main className="min-h-screen bg-black text-white p-4 md:p-12 font-sans selection:bg-blue-500/30 flex flex-col">
       <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-gray-800 pb-6 gap-6">
         <Link href="/" className="w-full md:w-auto group">
-          <div className="flex items-center justify-between md:justify-start gap-3 mb-2">
+          <div className="flex items-center gap-3 mb-2">
             <div className="p-1.5 rounded-xl bg-gradient-to-br from-violet-500/15 to-indigo-500/15 border border-violet-500/20 flex-shrink-0 group-hover:border-violet-500/40 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 md:w-9 md:h-9 text-violet-400" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             </div>
