@@ -250,9 +250,12 @@ export async function getHistoryData(period: PeriodType, dateStr?: string): Prom
       homeMin    = todayStats.locationStats.homeMinutes;
       outsideMin = todayStats.locationStats.outsideMinutes;
     } else if (row) {
-      officeMin  = row.office_minutes  || 0;
-      homeMin    = row.home_minutes    || 0;
-      outsideMin = row.outside_minutes || 0;
+      const rawLoc = (row.office_minutes || 0) + (row.home_minutes || 0) + (row.outside_minutes || 0);
+      const screentime = row.screentime_minutes || 0;
+      const ratio = rawLoc > 0 && screentime > 0 ? screentime / rawLoc : 0;
+      officeMin  = Math.round((row.office_minutes  || 0) * ratio);
+      homeMin    = Math.round((row.home_minutes    || 0) * ratio);
+      outsideMin = Math.round((row.outside_minutes || 0) * ratio);
     } else if (missingStatsMap.has(item.dateKey)) {
       const ms = missingStatsMap.get(item.dateKey)!;
       officeMin  = ms.locationStats.officeMinutes;
