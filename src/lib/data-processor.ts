@@ -12,6 +12,36 @@ const TIMEZONE = 'America/Santiago';
 
 const IGNORED_APPS = ['Lanzador del sistema', 'Pantalla Apagada', 'Reloj', 'Clock', 'Barra lateral inteligente'];
 
+const TRACKED_DEVICE_IDS = ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'oppo-5-lite', 'moon-reader'];
+const METRICS_PAGE_SIZE = 1000;
+
+/**
+ * PostgREST caps every response at 1000 rows (db-max-rows) and `.limit()` cannot raise
+ * that ceiling, so a day with more metrics used to come back silently truncated.
+ * Page through the range instead. The `id` tie-breaker is required: without it, rows
+ * sharing a `created_at` can be skipped or repeated across page boundaries.
+ */
+async function fetchAllMetrics(startIso: string, endIso: string, deviceIds: string[]) {
+  const page = (offset: number) => supabase.from('metrics').select('*')
+    .in('device_id', deviceIds)
+    .gte('created_at', startIso).lte('created_at', endIso)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+    .range(offset, offset + METRICS_PAGE_SIZE - 1);
+
+  type MetricRow = NonNullable<Awaited<ReturnType<typeof page>>['data']>[number];
+
+  const all: MetricRow[] = [];
+  for (let offset = 0; ; offset += METRICS_PAGE_SIZE) {
+    const { data, error } = await page(offset);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < METRICS_PAGE_SIZE) break;
+  }
+  return all;
+}
+
 const formatWifiName = (ssid: string | undefined): string => {
   if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet' || ssid === 'SIN_SSID') return 'Desconocido';
   if (ssid === 'GeCo') return 'Oficina';
@@ -171,10 +201,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const endIso = endUtc.toISOString();
 
   // Fetch raw metrics and sleep in parallel
-  const [{ data: allMetrics }, { data: sleepRows }] = await Promise.all([
-    supabase.from('metrics').select('*')
-      .in('device_id', ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'oppo-5-lite', 'moon-reader'])
-      .gte('created_at', startIso).lte('created_at', endIso).order('created_at', { ascending: true }).limit(10000),
+  const [allMetrics, { data: sleepRows }] = await Promise.all([
+    fetchAllMetrics(startIso, endIso, TRACKED_DEVICE_IDS),
     supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
   ]);
   const sleepHourly = computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr);

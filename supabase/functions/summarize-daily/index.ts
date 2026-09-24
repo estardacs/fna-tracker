@@ -32,6 +32,69 @@ const cleanBookTitle = (title: string | undefined): string => {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 };
 
+const METRICS_PAGE_SIZE = 1000;
+
+// Days summarized per invocation. Bounded so a long backlog cannot exceed the
+// function's wall-clock limit; the caller re-invokes until `done` comes back true.
+const DEFAULT_MAX_DAYS = 15;
+
+/**
+ * PostgREST caps every response at 1000 rows (db-max-rows) and `.limit()` cannot raise
+ * that ceiling, so a busy day used to be read truncated — and then deleted anyway.
+ * Page through the range instead.
+ *
+ * The explicit ordering matters twice over: the `id` tie-breaker stops rows sharing a
+ * `created_at` from being skipped or repeated across page boundaries, and mobile
+ * duration is derived from consecutive events, so chronological order is required for
+ * the numbers to be correct at all.
+ *
+ * Mirrors fetchAllMetrics() in src/lib/data-processor.ts — keep both in sync.
+ */
+async function fetchAllMetrics(supabase: any, startIso: string, endIso: string) {
+  const all: any[] = [];
+  for (let offset = 0; ; offset += METRICS_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('metrics')
+      .select('*')
+      .gte('created_at', startIso)
+      .lte('created_at', endIso)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + METRICS_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error('[Summarizer] Error fetching metrics:', error.message);
+      throw error;
+    }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < METRICS_PAGE_SIZE) break;
+  }
+  return all;
+}
+
+/**
+ * Deletes every raw metric in the range. The 1000-row cap applies to DELETE too, so a
+ * single call leaves residue on busy days — loop until a pass removes nothing.
+ */
+async function deleteAllMetrics(supabase: any, startIso: string, endIso: string): Promise<number> {
+  let deleted = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('metrics')
+      .delete()
+      .gte('created_at', startIso)
+      .lte('created_at', endIso)
+      .select('id');
+
+    if (error) throw error;
+    const n = data?.length ?? 0;
+    deleted += n;
+    if (n === 0) break;
+  }
+  return deleted;
+}
+
 // The core logic of getDailyStats, adapted to be a self-contained function
 async function calculateDailyStats(supabase: any, dateStr: string): Promise<DashboardStats> {
   const targetDate = toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE);
@@ -45,18 +108,8 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
   console.log(`[Summarizer] Calculating stats for date: ${dateStr}`);
   console.log(`[Summarizer] Query Range (UTC): ${startIso} to ${endIso}`);
 
-  // Fetch all data for the day
-  const { data: metrics, error } = await supabase
-    .from('metrics')
-    .select('*')
-    .gte('created_at', startIso)
-    .lte('created_at', endIso)
-    .limit(10000);
-
-  if (error) {
-    console.error('[Summarizer] Error fetching metrics:', error.message);
-    throw error;
-  }
+  // Fetch all data for the day, paginated past the 1000-row cap
+  const metrics = await fetchAllMetrics(supabase, startIso, endIso);
 
   const pcData = metrics.filter((m: any) => ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio'].includes(m.device_id));
   const mobileData = metrics.filter((m: any) => m.device_id === 'oppo-5-lite');
@@ -400,7 +453,7 @@ async function updatePeriodSummary(
 
 
 // Helper: build and upsert a daily_summary row for a given dateStr
-async function processDay(supabaseAdmin: any, dateStr: string): Promise<boolean> {
+async function processDay(supabaseAdmin: any, dateStr: string, deleteRaw: boolean): Promise<boolean> {
   const stats = await calculateDailyStats(supabaseAdmin, dateStr);
 
   const summaryData = {
@@ -444,17 +497,22 @@ async function processDay(supabaseAdmin: any, dateStr: string): Promise<boolean>
   }
   console.log(`[Summarizer] Upserted daily_summary for ${dateStr}.`);
 
-  // Delete raw metrics now that everything is consolidated into daily_summary
+  // Raw metrics are kept by default. Deleting them is irreversible, so it only happens
+  // when the caller explicitly opts in — after the summaries have been eyeballed.
+  if (!deleteRaw) {
+    console.log(`[Summarizer] Kept raw metrics for ${dateStr} (deleteRaw=false).`);
+    return true;
+  }
+
   const targetLocal = toZonedTime(parseISO(dateStr + 'T12:00:00'), TIMEZONE);
   const startUtc = fromZonedTime(startOfDay(targetLocal), TIMEZONE).toISOString();
   const endUtc   = fromZonedTime(endOfDay(targetLocal),   TIMEZONE).toISOString();
-  const { error: delError } = await supabaseAdmin
-    .from('metrics')
-    .delete()
-    .gte('created_at', startUtc)
-    .lte('created_at', endUtc);
-  if (delError) throw new Error(`Failed to delete metrics for ${dateStr}: ${delError.message}`);
-  console.log(`[Summarizer] Deleted raw metrics for ${dateStr} (${startUtc} → ${endUtc}).`);
+  try {
+    const deleted = await deleteAllMetrics(supabaseAdmin, startUtc, endUtc);
+    console.log(`[Summarizer] Deleted ${deleted} raw metrics for ${dateStr} (${startUtc} → ${endUtc}).`);
+  } catch (e: any) {
+    throw new Error(`Failed to delete metrics for ${dateStr}: ${e.message}`);
+  }
 
   return true;
 }
@@ -469,6 +527,12 @@ Deno.serve(async (req) => {
   if (providedSecret !== Deno.env.get('SUMMARIZER_SECRET')) {
     return new Response('Unauthorized', { status: 401 });
   }
+
+  // Optional tuning from the body. Defaults are the conservative ones: a bounded batch
+  // so a long backlog cannot blow the wall-clock limit, and no deletion of raw metrics.
+  const body = await req.json().catch(() => ({})) as { maxDays?: number; deleteRaw?: boolean };
+  const maxDays = Math.min(Math.max(Number(body.maxDays) || DEFAULT_MAX_DAYS, 1), 60);
+  const deleteRaw = body.deleteRaw === true;
 
   try {
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -514,12 +578,20 @@ Deno.serve(async (req) => {
     }
 
     // Dates that need processing = in range, before today, not yet summarized
-    const datesToProcess = allDates.filter(d => d < todayStr && !summarizedDates.has(d));
+    const pendingDates = allDates.filter(d => d < todayStr && !summarizedDates.has(d));
 
-    console.log(`[Summarizer] Dates to process: ${datesToProcess.length > 0 ? datesToProcess.join(', ') : 'none'}`);
+    // Only a bounded slice per invocation. Each day is committed as it finishes, so
+    // re-invoking picks up exactly where this run stopped.
+    const datesToProcess = pendingDates.slice(0, maxDays);
+    const remaining = pendingDates.length - datesToProcess.length;
+
+    console.log(`[Summarizer] Pending: ${pendingDates.length}. Processing ${datesToProcess.length} this run (deleteRaw=${deleteRaw}).`);
 
     if (datesToProcess.length === 0) {
-      return new Response(JSON.stringify({ message: 'No pending days to summarize.' }), {
+      return new Response(JSON.stringify({
+        message: 'No pending days to summarize.',
+        processed: 0, remaining: 0, done: true,
+      }), {
         headers: { 'Content-Type': 'application/json' },
         status: 200,
       });
@@ -527,7 +599,7 @@ Deno.serve(async (req) => {
 
     // Process each pending day
     for (const dateStr of datesToProcess) {
-      await processDay(supabaseAdmin, dateStr);
+      await processDay(supabaseAdmin, dateStr, deleteRaw);
     }
 
     // Update period summaries for all affected weeks/months/years
@@ -562,7 +634,14 @@ Deno.serve(async (req) => {
       await updatePeriodSummary(supabaseAdmin, 'yearly', format(yearStart, 'yyyy-MM-dd'), format(yearEnd, 'yyyy-MM-dd'), 'year', year);
     }
 
-    return new Response(JSON.stringify({ message: `Processed ${datesToProcess.length} day(s): ${datesToProcess.join(', ')}` }), {
+    return new Response(JSON.stringify({
+      message: `Processed ${datesToProcess.length} day(s): ${datesToProcess.join(', ')}`,
+      processed: datesToProcess.length,
+      dates: datesToProcess,
+      remaining,
+      done: remaining === 0,
+      deletedRaw: deleteRaw,
+    }), {
       headers: { 'Content-Type': 'application/json' },
       status: 200,
     });

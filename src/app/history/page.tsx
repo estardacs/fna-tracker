@@ -8,19 +8,38 @@ async function triggerSummarize() {
   const secret = process.env.SUMMARIZER_SECRET;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!secret || !supabaseUrl || !anonKey) return;
+
+  // This used to `return` silently, so a missing secret looked identical to a healthy
+  // run — summarization was dead for six months without a single trace anywhere.
+  if (!secret || !supabaseUrl || !anonKey) {
+    console.warn('[history] summarize-daily skipped: SUMMARIZER_SECRET is not configured.');
+    return;
+  }
+
   try {
     const res = await fetch(`${supabaseUrl}/functions/v1/summarize-daily`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${anonKey}`,
         'X-Secret': secret,
+        'Content-Type': 'application/json',
       },
+      // Bounded batch: the page must stay responsive, and any backlog is drained
+      // across successive visits rather than in one long request.
+      body: JSON.stringify({ maxDays: 5 }),
       signal: AbortSignal.timeout(25_000),
     });
-    console.log('[history] summarize-daily:', res.status);
-  } catch (e: any) {
-    console.warn('[history] summarize-daily failed:', e.message);
+
+    // A non-2xx here is the failure mode that went unnoticed: the edge function was
+    // returning 500 on every call because daily_summary.university_minutes was missing.
+    const payload = await res.text();
+    if (!res.ok) {
+      console.error(`[history] summarize-daily returned ${res.status}: ${payload}`);
+    } else {
+      console.log(`[history] summarize-daily ${res.status}: ${payload}`);
+    }
+  } catch (e) {
+    console.warn('[history] summarize-daily failed:', e instanceof Error ? e.message : String(e));
   }
 }
 
