@@ -8,6 +8,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev      # Start dev server at localhost:3000
 npm run build    # Build for production (also type-checks)
 npm run lint     # Run ESLint
+
+# Rebuild daily_summary from raw metrics. Reuses getDailyStats(), so results match the
+# dashboard exactly. Never deletes anything. Skips days that already have a summary
+# unless --force is passed.
+npm run backfill -- --from=2026-03-17 --to=2026-09-23 --dry-run
+npm run backfill -- --from=2026-03-17 --to=2026-09-23
+
+# Delete raw metrics for days that are already summarized. Dry run by default;
+# --confirm actually deletes. Deliberately manual — never wire this to a schedule.
+npm run prune-metrics -- --from=2026-03-17 --to=2026-09-23
+npm run prune-metrics -- --from=2026-03-17 --to=2026-09-23 --confirm
+```
+
+Ad-hoc SQL against the linked project (uses the Management API, no DB password needed):
+
+```bash
+supabase db query --linked -o json "select count(*) from daily_summary"
 ```
 
 No test suite exists. Use `/test-db` route in browser to verify Supabase connectivity and inspect recent raw records.
@@ -36,9 +53,9 @@ This is the most critical architectural concept. There are **two completely sepa
 ### Layer 2 — History (`/history`)
 - Reads exclusively from the pre-aggregated **`daily_summary`** table
 - `src/lib/history-processor.ts` queries this table; all periods (weekly/monthly/yearly) use it
-- **Raw `metrics` are deleted after summarization** — but `daily_summary` now stores `activity_timeline` (24 hourly buckets) and `recent_events` (up to 100 events) so charts and logs remain functional
-- The `/history` page **triggers summarization on every load** by calling the Edge Function directly (`triggerSummarize()`) — ensures yesterday is always summarized before displaying history
-- A Supabase Edge Function (`supabase/functions/summarize-daily/`) can also run nightly (cron) to aggregate yesterday into `daily_summary`, then rolls up into `weekly_summary`, `monthly_summary`, `yearly_summary`
+- **Raw `metrics` are retained by default.** `daily_summary` stores `activity_timeline` (24 hourly buckets) and `recent_events` (up to 100 events) so charts and logs work without them, but deletion is now opt-in (`deleteRaw: true`, or the `prune-metrics` script) rather than automatic — see the warning in the Edge Function section
+- The `/history` page **triggers summarization on every load** by calling the Edge Function directly (`triggerSummarize()`), in batches of 5 days — ensures yesterday is always summarized before displaying history
+- A Supabase Edge Function (`supabase/functions/summarize-daily/`) also runs nightly via `pg_cron` (see `supabase/migrations/20260924000001_setup_cron.sql`) to aggregate pending days into `daily_summary`, then rolls up into `weekly_summary`, `monthly_summary`, `yearly_summary`. The secret comes from Supabase Vault. Check health with `select * from cron.job_run_details order by start_time desc limit 5;`
 
 ### Data Flow
 
@@ -47,13 +64,13 @@ Devices
   └──→ metrics (raw) ──→ [live dashboard: today only]
              │                └──→ [getDailyStats for past dates: tries daily_summary first]
              │
-             └──→ [summarize-daily Edge Fn, triggered on /history load + optional nightly cron]
+             └──→ [summarize-daily Edge Fn: /history load + nightly pg_cron, batched]
                         │
                         ├──→ daily_summary  ──→ [ALL history views: weekly/monthly/yearly]
                         ├──→ weekly_summary ──→ [rolled up, but NOT queried by history-processor]
                         ├──→ monthly_summary  (same — rolled up but not currently read)
                         └──→ yearly_summary   (same — rolled up but not currently read)
-                  (raw metrics deleted — charts/logs preserved in activity_timeline + recent_events)
+                  (raw metrics KEPT by default; pruning is a separate manual step)
 ```
 
 ---
@@ -225,15 +242,32 @@ Health tables use RLS: anon INSERT allowed (for MacroDroid), SELECT requires aut
 
 Located at `supabase/functions/summarize-daily/index.ts`. This is a **Deno** runtime function (not Node.js). It:
 
-1. Authenticates via `Authorization: Bearer <SUMMARIZER_SECRET>` header
-2. Processes yesterday's raw metrics using a self-contained copy of the data processing logic (intentionally duplicated — cannot import from Next.js `src/lib/`)
+1. Authenticates via `X-Secret` header **or** `Authorization: Bearer <SUMMARIZER_SECRET>` (both accepted)
+2. Processes every pending day using a self-contained copy of the data processing logic (intentionally duplicated — cannot import from Next.js `src/lib/`)
 3. Upserts into `daily_summary`
-4. **Deletes all raw `metrics` rows for that day** — this is permanent
+4. Deletes the raw `metrics` for that day **only when the request body sets `deleteRaw: true`** — this is permanent
 5. Rolls up `daily_summary` into `weekly_summary`, `monthly_summary`, `yearly_summary`
+
+Request body (all optional): `{ "maxDays": 15, "deleteRaw": false }`. It processes at most
+`maxDays` pending days per invocation and returns `{ processed, remaining, done }`, so a
+backlog is drained by calling it until `done` is `true`. Each day commits independently,
+so re-invoking resumes exactly where the previous call stopped.
 
 Required Supabase env vars for the function: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUMMARIZER_SECRET`.
 
+**Deploying** requires pointing at the import map explicitly, or the bundler fails on
+`date-fns-tz` with "Relative import path not prefixed with /":
+
+```bash
+supabase functions deploy summarize-daily --import-map supabase/functions/deno.json
+```
+
 > **Warning:** If you modify data processing logic in `src/lib/data-processor.ts`, you must mirror those changes in the Edge Function or historical data will be calculated differently.
+
+> **Warning:** Adding a field to the `daily_summary` upsert without a matching migration
+> breaks summarization completely and silently. This is exactly what happened on
+> 2026-03-17: the function started writing `university_minutes`, the column did not
+> exist, every upsert threw, and 191 days went unsummarized before anyone noticed.
 
 ---
 
@@ -258,6 +292,12 @@ SUMMARIZER_SECRET              # Secret for authenticating calls to summarize-da
 
 ## Key Patterns & Gotchas
 
+- **PostgREST caps every response at 1000 rows** and `.limit(10000)` does *not* raise that
+  ceiling — it is a server setting (`db-max-rows`) and applies to `service_role` too, and
+  to `DELETE` as well as `SELECT`. Never read a day of `metrics` with a single query:
+  use the paginated `fetchAllMetrics()` in `src/lib/data-processor.ts` (mirrored in the
+  Edge Function). Always include a tie-breaker `.order('id')` alongside `.order('created_at')`,
+  or rows sharing a timestamp get skipped or duplicated across page boundaries.
 - **`cn()` utility** (`src/lib/utils.ts`): combines `clsx` + `tailwind-merge`. Use this for conditional Tailwind classes.
 - **Recharts on SSR**: `ActivityChart` uses a `mounted` state guard before rendering to avoid hydration mismatch. This pattern should be followed for any new Recharts components.
 - **No shared imports between Next.js and Deno**: The Edge Function is fully self-contained. Processing logic changes must be applied in both places.
