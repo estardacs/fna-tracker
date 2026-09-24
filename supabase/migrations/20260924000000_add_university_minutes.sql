@@ -13,12 +13,7 @@
 ALTER TABLE daily_summary
   ADD COLUMN IF NOT EXISTS university_minutes INTEGER NOT NULL DEFAULT 0;
 
--- Period rollups expose the same breakdown.
-ALTER TABLE weekly_summary
-  ADD COLUMN IF NOT EXISTS total_university_minutes INTEGER NOT NULL DEFAULT 0;
-
-ALTER TABLE monthly_summary
-  ADD COLUMN IF NOT EXISTS total_university_minutes INTEGER NOT NULL DEFAULT 0;
-
-ALTER TABLE yearly_summary
-  ADD COLUMN IF NOT EXISTS total_university_minutes INTEGER NOT NULL DEFAULT 0;
+-- Only daily_summary gets it. The period rollup tables carry no location columns at
+-- all (no office/home/outside), and history-processor.ts reads none of them — every
+-- period is aggregated from daily_summary. A lone total_university_minutes there would
+-- be an orphan column nothing writes and nothing reads.
