@@ -9,27 +9,34 @@ type AppItem = { name: string; minutes: number };
 type AppsListProps = {
   title: string;
   type: 'pc' | 'mobile';
-  apps: AppItem[] | { 
-    all: AppItem[]; 
-    'Lenovo Yoga 7 Slim': AppItem[]; 
-    'PC Escritorio': AppItem[] 
-  };
+  apps: AppItem[] | ({ all: AppItem[] } & Record<string, AppItem[]>);
+};
+
+// Device names are long; these keep the tab strip readable. Anything not listed falls
+// back to its own name, so a new machine needs no entry here.
+const SHORT_LABELS: Record<string, string> = {
+  'Lenovo Yoga 7 Slim': 'Yoga',
+  'PC Escritorio': 'PC',
 };
 
 export default function AppsList({ title, apps, type }: AppsListProps) {
-  const [activeTab, setActiveTab] = useState<'all' | 'Lenovo Yoga 7 Slim' | 'PC Escritorio'>('all');
+  const [activeTab, setActiveTab] = useState<string>('all');
 
   const Icon = type === 'pc' ? Monitor : Smartphone;
   const colorClass = type === 'pc' ? 'text-blue-400' : 'text-emerald-400';
   const barClass = type === 'pc' ? 'bg-blue-500' : 'bg-emerald-500';
 
-  // Determinar qué lista mostrar
+  // Tabs are built from whichever machines actually reported that day, so retired
+  // hardware disappears on its own and a new one shows up without a code change.
+  const deviceKeys = Array.isArray(apps) ? [] : Object.keys(apps).filter(k => k !== 'all');
+  const showTabs = deviceKeys.length > 1;
+
   let currentList: AppItem[] = [];
-  
   if (Array.isArray(apps)) {
     currentList = apps;
   } else {
-    currentList = apps[activeTab] || [];
+    // A tab can vanish between days (machine sold, or simply unused), so fall back.
+    currentList = apps[activeTab] ?? apps.all ?? [];
   }
 
   const maxVal = Math.max(...currentList.map(a => a.minutes), 1);
@@ -43,27 +50,26 @@ export default function AppsList({ title, apps, type }: AppsListProps) {
           <h3 className="text-gray-200 text-sm md:text-base font-semibold">{title}</h3>
         </div>
 
-        {/* Tabs solo para PC */}
-        {!Array.isArray(apps) && (
-          <div className="flex gap-1 bg-gray-950/50 p-1 rounded-lg border border-gray-800">
-            <TabButton 
-              active={activeTab === 'all'} 
-              onClick={() => setActiveTab('all')} 
+        {/* Tabs solo para PC, y solo si hubo más de un equipo ese día */}
+        {showTabs && (
+          <div className="flex gap-1 bg-gray-950/50 p-1 rounded-lg border border-gray-800 overflow-x-auto">
+            <TabButton
+              active={activeTab === 'all'}
+              onClick={() => setActiveTab('all')}
               icon={<LayoutGrid className="w-3 h-3" />}
               label="Todos"
             />
-            <TabButton 
-              active={activeTab === 'Lenovo Yoga 7 Slim'} 
-              onClick={() => setActiveTab('Lenovo Yoga 7 Slim')} 
-              icon={<Laptop className="w-3 h-3" />}
-              label="Laptop"
-            />
-            <TabButton 
-              active={activeTab === 'PC Escritorio'} 
-              onClick={() => setActiveTab('PC Escritorio')} 
-              icon={<Monitor className="w-3 h-3" />}
-              label="PC"
-            />
+            {deviceKeys.map(device => (
+              <TabButton
+                key={device}
+                active={activeTab === device}
+                onClick={() => setActiveTab(device)}
+                icon={/escritorio|desktop/i.test(device)
+                  ? <PcCase className="w-3 h-3" />
+                  : <Laptop className="w-3 h-3" />}
+                label={SHORT_LABELS[device] ?? device}
+              />
+            ))}
           </div>
         )}
       </div>

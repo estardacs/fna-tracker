@@ -227,14 +227,38 @@ Health tables use RLS: anon INSERT allowed (for MacroDroid), SELECT requires aut
 
 ## Device IDs
 
-| `device_id` | Display Name | Data Source |
-|---|---|---|
-| `windows-pc` | Lenovo Yoga 7 Slim | PC screen activity script |
-| `Lenovo Yoga 7 Slim` | Lenovo Yoga 7 Slim | Same PC, newer format |
-| `PC Escritorio` | PC Escritorio | Desktop PC screen activity |
-| `oppo-5-lite` | Oppo 5 Lite / Teléfono | Android app (MacroDroid/Tasker) |
-| `moon-reader` | Cloud (reading) | Moon+ Reader sync |
-| `xiaomi-band` | Xiaomi Band | Via `/api/track/wearable` POST |
+| `device_id` | Display Name | Data Source | Status |
+|---|---|---|---|
+| `Zenbook` | Zenbook | `scripts/track-activity.mjs` (Windows, native Node) | **active** |
+| `oppo-5-lite` | Oppo 5 Lite / Teléfono | Android app (MacroDroid/Tasker) | active |
+| `moon-reader` | Cloud (reading) | Moon+ Reader sync | active |
+| `windows-pc` | Lenovo Yoga 7 Slim | Legacy id, older metric format | retired |
+| `Lenovo Yoga 7 Slim` | Lenovo Yoga 7 Slim | Same laptop, newer format | retired (sold, May 2026) |
+| `PC Escritorio` | PC Escritorio | Desktop PC screen activity | retired (sold, May 2026) |
+| `xiaomi-band` | Xiaomi Band | Via `/api/track/wearable` POST | no data recorded |
+
+Retired ids stay in `PC_DEVICE_IDS` so historical days still resolve. **No PC data exists
+between 2026-05-20 and the day the Zenbook starts reporting** — both machines were sold,
+so those days are mobile-only in the data, not broken.
+
+Adding a machine means editing `PC_DEVICE_IDS` in `src/lib/data-processor.ts` **and** the
+mirrored list in the Edge Function. Everything downstream (tabs in `AppsList`, per-device
+breakdowns) is derived from whichever devices actually reported, so nothing else changes.
+
+### PC tracker
+
+`scripts/track-activity.mjs` runs Node natively on Windows (no WSL) and writes one
+`usage_summary_1min` row per active minute:
+
+```
+metadata: { breakdown: {processName: seconds}, wifi_ssid, battery_level, is_charging, timestamp }
+```
+
+A single long-lived `powershell.exe` does per-second sampling and prints one JSON line per
+minute — spawning it 60 times a minute would recompile the Win32 interop every time. Idle
+seconds (>3 min without input) are dropped rather than attributed to the focused window.
+Set `DEVICE_ID` to override the device name; it defaults to `Zenbook`.
+`scripts/start-tracker.vbs` launches it hidden at login via `shell:startup`.
 
 ---
 

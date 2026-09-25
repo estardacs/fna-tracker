@@ -12,7 +12,11 @@ const TIMEZONE = 'America/Santiago';
 
 const IGNORED_APPS = ['Lanzador del sistema', 'Pantalla Apagada', 'Reloj', 'Clock', 'Barra lateral inteligente'];
 
-const TRACKED_DEVICE_IDS = ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'oppo-5-lite', 'moon-reader'];
+// Machines whose activity counts as PC time. 'windows-pc' is the legacy id the first
+// laptop reported under; 'Lenovo Yoga 7 Slim' and 'PC Escritorio' were sold in May 2026
+// and stay listed so historical days still resolve.
+const PC_DEVICE_IDS = ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'Zenbook'];
+const TRACKED_DEVICE_IDS = [...PC_DEVICE_IDS, 'oppo-5-lite', 'moon-reader'];
 const METRICS_PAGE_SIZE = 1000;
 
 /**
@@ -66,11 +70,9 @@ export type DashboardStats = {
   readingMinutes: number;
   booksReadToday: { title: string; percent: number; timeSpentSec: number }[];
   activityTimeline: { hour: string; pc: number; mobile: number; sleep: number }[];
-  pcAppHistory: {
-    all: { name: string; minutes: number }[];
-    'Lenovo Yoga 7 Slim': { name: string; minutes: number }[];
-    'PC Escritorio': { name: string; minutes: number }[];
-  };
+  // Keyed by device display name, plus an 'all' aggregate. Open-ended so retiring or
+  // adding a machine needs no type change — the UI builds its tabs from these keys.
+  pcAppHistory: { all: { name: string; minutes: number }[] } & Record<string, { name: string; minutes: number }[]>;
   screenTimeMinutes: number;
   gamingMinutes: number;
   gamesPlayedToday: { title: string; timeSpentSec: number }[];
@@ -218,14 +220,14 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
         booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
         activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
-        pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
+        pcAppHistory: { all: [] },
         locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0, universityMinutes: 0 },
         locationBreakdown: { pc: { office: 0, home: 0, outside: 0, university: 0 }, mobile: { office: 0, home: 0, outside: 0, university: 0 }, screenTime: { office: 0, home: 0, outside: 0, university: 0 } },
         lastPcStatus: null, lastMobileStatus: null
     };
   }
 
-  const pcData = (allMetrics || []).filter(r => ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio'].includes(r.device_id));
+  const pcData = (allMetrics || []).filter(r => PC_DEVICE_IDS.includes(r.device_id));
   const mobileData = (allMetrics || []).filter(r => r.device_id === 'oppo-5-lite');
   const readingData = (allMetrics || []).filter(r => r.device_id === 'moon-reader');
 
@@ -235,7 +237,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
           sleepMinutes: Object.values(sleepHourly).reduce((a, b) => a + b, 0),
           booksReadToday: [], gamesPlayedToday: [], topMobileApps: [], recentEvents: [],
           activityTimeline: Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2, '0'); return { hour: `${h}:00`, pc: 0, mobile: 0, sleep: sleepHourly[h] || 0 }; }),
-          pcAppHistory: { all: [], 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
+          pcAppHistory: { all: [] },
           locationStats: { officeMinutes: 0, homeMinutes: 0, outsideMinutes: 0, universityMinutes: 0 },
           locationBreakdown: { pc: { office: 0, home: 0, outside: 0, university: 0 }, mobile: { office: 0, home: 0, outside: 0, university: 0 }, screenTime: { office: 0, home: 0, outside: 0, university: 0 } },
           lastPcStatus: null, lastMobileStatus: null
@@ -274,8 +276,14 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   };
 
   const pcAppsMapAll = new Map<string, number>();
-  const pcAppsMapYoga = new Map<string, number>();
-  const pcAppsMapDesktop = new Map<string, number>();
+  // Per-machine breakdown, keyed by display name. Previously two fixed maps with an
+  // `else` fallback, which silently lumped any unrecognised machine into PC Escritorio.
+  const pcAppsByDevice = new Map<string, Map<string, number>>();
+  const addDeviceApp = (device: string, app: string, minutes: number) => {
+    let apps = pcAppsByDevice.get(device);
+    if (!apps) { apps = new Map<string, number>(); pcAppsByDevice.set(device, apps); }
+    apps.set(app, (apps.get(app) || 0) + minutes);
+  };
   const unifiedEvents: any[] = [];
   const locBreakdown = { pc: { office: 0, home: 0, outside: 0, university: 0 }, mobile: { office: 0, home: 0, outside: 0, university: 0 }, screenTime: { office: 0, home: 0, outside: 0, university: 0 } };
 
@@ -311,8 +319,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
             if (isGame) { totalGamingSeconds += sec; gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + sec); }
             const min = sec / 60;
             pcAppsMapAll.set(cleanApp, (pcAppsMapAll.get(cleanApp) || 0) + min);
-            if (deviceName === 'Lenovo Yoga 7 Slim') pcAppsMapYoga.set(cleanApp, (pcAppsMapYoga.get(cleanApp) || 0) + min);
-            else pcAppsMapDesktop.set(cleanApp, (pcAppsMapDesktop.get(cleanApp) || 0) + min);
+            addDeviceApp(deviceName, cleanApp, min);
             details.push(`${cleanApp} (${sec}s)`);
           }
         });
@@ -358,8 +365,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
           else appName = 'Sistema/Escritorio';
         }
         pcAppsMapAll.set(appName, (pcAppsMapAll.get(appName) || 0) + minutes);
-        if (deviceName === 'Lenovo Yoga 7 Slim') pcAppsMapYoga.set(appName, (pcAppsMapYoga.get(appName) || 0) + minutes);
-        else pcAppsMapDesktop.set(appName, (pcAppsMapDesktop.get(appName) || 0) + minutes);
+        addDeviceApp(deviceName, appName, minutes);
         if (appName !== currentApp) {
           unifiedEvents.push({ id: pcData[i-1]?.id || row.id, time: new Date(startTime).toISOString(), device: deviceName, detail: currentApp, duration: formatDurationSec(count * 60), type: 'pc' });
           currentApp = appName; startTime = new Date(row.created_at).getTime(); count = 1;
@@ -507,7 +513,10 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     gamingMinutes: totalGamingSeconds / 60, gamesPlayedToday: Array.from(gamesMap.entries()).map(([title, sec]) => ({ title, timeSpentSec: sec })).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
     booksReadToday: Array.from(booksFinalMap.values()).sort((a, b) => b.timeSpentSec - a.timeSpentSec),
     activityTimeline: Array.from(timelineData.entries()).map(([hour, stats]) => ({ hour: `${hour}:00`, pc: stats.pc, mobile: stats.mobile, sleep: sleepHourly[hour] || 0 })).sort((a, b) => a.hour.localeCompare(b.hour)),
-    pcAppHistory: { all: toArray(pcAppsMapAll), 'Lenovo Yoga 7 Slim': toArray(pcAppsMapYoga), 'PC Escritorio': toArray(pcAppsMapDesktop) },
+    pcAppHistory: {
+      all: toArray(pcAppsMapAll),
+      ...Object.fromEntries([...pcAppsByDevice].map(([device, apps]) => [device, toArray(apps)])),
+    },
     topMobileApps: toArray(mobileAppsMap), recentEvents: unifiedEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 100),
     locationStats: { officeMinutes: rawOfficeMinutes, homeMinutes: rawHomeMinutes, outsideMinutes: rawOutsideMinutes, universityMinutes: rawUniversityMinutes },
     locationBreakdown: { pc: locBreakdown.pc, mobile: locBreakdown.mobile, screenTime: { office: locBreakdown.pc.office + locBreakdown.mobile.office, home: locBreakdown.pc.home + locBreakdown.mobile.home, outside: locBreakdown.pc.outside + locBreakdown.mobile.outside, university: locBreakdown.pc.university + locBreakdown.mobile.university } },
@@ -562,7 +571,7 @@ function buildStatsFromSummary(s: any, sleepHourly: Record<string, number> = {})
     booksReadToday:    books,
     gamesPlayedToday:  games,
     topMobileApps:     mobileApps,
-    pcAppHistory: { all: pcApps, 'Lenovo Yoga 7 Slim': [], 'PC Escritorio': [] },
+    pcAppHistory: { all: pcApps },
     locationStats: {
       officeMinutes:     s.office_minutes     || 0,
       homeMinutes:       s.home_minutes       || 0,
