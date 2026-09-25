@@ -23,7 +23,7 @@ import { createClient } from '@supabase/supabase-js';
 import { spawn } from 'child_process';
 import { createServer } from 'net';
 import { createInterface } from 'readline';
-import { existsSync } from 'fs';
+import { existsSync, appendFileSync, statSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -39,10 +39,28 @@ for (const candidate of [join(process.cwd(), '.env.local'), join(here, '.env.loc
 const DEVICE_ID = process.env.DEVICE_ID || 'Zenbook';
 const IDLE_THRESHOLD_MS = 3 * 60 * 1000;
 
+// start-tracker.vbs runs this with no console window, so stdout goes nowhere. Everything
+// is mirrored to tracker.log in the project root, which is the only way to find out why
+// a hidden tracker stopped reporting.
+const LOG_FILE = join(here, '..', 'tracker.log');
+const LOG_MAX_BYTES = 1024 * 1024;
+
+function log(message) {
+  const line = `${new Date().toISOString()} ${message}`;
+  process.stdout.write(line + '\n');
+  try {
+    // Truncate rather than rotate: this is a diagnostic tail, not an audit trail.
+    if (existsSync(LOG_FILE) && statSync(LOG_FILE).size > LOG_MAX_BYTES) writeFileSync(LOG_FILE, '');
+    appendFileSync(LOG_FILE, line + '\n');
+  } catch {
+    // Never let a logging problem take down the tracker.
+  }
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  log('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.');
   process.exit(1);
 }
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -142,14 +160,14 @@ async function publish(sample) {
   }]);
 
   if (error) {
-    console.error(`[tracker] insert failed: ${error.message}`);
+    log(`[tracker] insert failed: ${error.message}`);
     return;
   }
   const apps = Object.entries(sample.breakdown)
     .sort((a, b) => b[1] - a[1])
     .map(([name, secs]) => `${name} ${secs}s`)
     .join(', ');
-  console.log(`[tracker] ${new Date().toLocaleTimeString()}  ${apps}  |  ${sample.wifi_ssid}  ${sample.battery_level}%`);
+  log(`[tracker] ${new Date().toLocaleTimeString()}  ${apps}  |  ${sample.wifi_ssid}  ${sample.battery_level}%`);
 }
 
 let child = null;
@@ -168,16 +186,16 @@ function startSampler() {
       publish(JSON.parse(trimmed));
       restartDelay = 1000; // a clean sample means the sampler is healthy again
     } catch (e) {
-      console.error(`[tracker] could not parse sample: ${e.message}`);
+      log(`[tracker] could not parse sample: ${e.message}`);
     }
   });
 
-  child.stderr.on('data', d => console.error(`[tracker] powershell: ${String(d).trim()}`));
+  child.stderr.on('data', d => log(`[tracker] powershell: ${String(d).trim()}`));
 
   // The sampler loops forever, so any exit is a failure. Back off up to a minute so a
   // persistent problem does not spin, and keep the process alive across sleep/resume.
   child.on('exit', code => {
-    console.error(`[tracker] sampler exited (${code}), restarting in ${restartDelay / 1000}s`);
+    log(`[tracker] sampler exited (${code}), restarting in ${restartDelay / 1000}s`);
     setTimeout(startSampler, restartDelay);
     restartDelay = Math.min(restartDelay * 2, 60000);
   });
@@ -199,13 +217,13 @@ const lock = createServer();
 
 lock.once('error', err => {
   if (err.code === 'EADDRINUSE') {
-    console.error('[tracker] another instance is already running — exiting.');
+    log('[tracker] another instance is already running — exiting.');
     process.exit(0);
   }
   throw err;
 });
 
 lock.listen(LOCK_PORT, '127.0.0.1', () => {
-  console.log(`[tracker] running as "${DEVICE_ID}" — one row per active minute.`);
+  log(`[tracker] running as "${DEVICE_ID}" — one row per active minute.`);
   startSampler();
 });

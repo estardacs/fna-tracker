@@ -46,3 +46,6 @@ supabase/.temp/
 
 # Windows NTFS alternate data streams (created when a file is downloaded)
 *:Zone.Identifier
+
+# tracker runtime log
+tracker.log
