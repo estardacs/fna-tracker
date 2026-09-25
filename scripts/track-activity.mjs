@@ -21,6 +21,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { spawn } from 'child_process';
+import { createServer } from 'net';
 import { createInterface } from 'readline';
 import { existsSync } from 'fs';
 import { dirname, join } from 'path';
@@ -189,5 +190,22 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-console.log(`[tracker] running as "${DEVICE_ID}" — one row per active minute.`);
-startSampler();
+// Single-instance guard. Two trackers running at once (a terminal left open plus the
+// autostart copy) would each insert a row per minute and double every screen-time
+// figure. Binding a loopback port is atomic and, unlike a PID file, cannot be left
+// stale by a hard kill or a power loss.
+const LOCK_PORT = 47615;
+const lock = createServer();
+
+lock.once('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    console.error('[tracker] another instance is already running — exiting.');
+    process.exit(0);
+  }
+  throw err;
+});
+
+lock.listen(LOCK_PORT, '127.0.0.1', () => {
+  console.log(`[tracker] running as "${DEVICE_ID}" — one row per active minute.`);
+  startSampler();
+});
