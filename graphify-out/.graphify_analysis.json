@@ -1,0 +1,806 @@
+{
+  "communities": {
+    "0": [
+      "src_components_diet_addfoodmodal",
+      "src_components_diet_addfoodmodal_addfoodmodal",
+      "src_components_diet_addfoodmodal_addfoodmodalprops",
+      "src_components_diet_addfoodmodal_combo",
+      "src_components_diet_addfoodmodal_comboitem",
+      "src_components_diet_addfoodmodal_combostab",
+      "src_components_diet_addfoodmodal_createfoodform",
+      "src_components_diet_addfoodmodal_deletecombobutton",
+      "src_components_diet_addfoodmodal_fooditem",
+      "src_components_diet_addfoodmodal_foodrow",
+      "src_components_diet_addfoodmodal_gramsinput",
+      "src_components_diet_addfoodmodal_macrorow",
+      "src_components_diet_addfoodmodal_meal_labels",
+      "src_components_diet_addfoodmodal_quick_grams",
+      "src_components_diet_addfoodmodal_scanitemcard",
+      "src_components_diet_addfoodmodal_scansuggestion",
+      "src_components_diet_addfoodmodal_scantab",
+      "src_components_diet_addfoodmodal_searchtab",
+      "src_components_diet_addfoodmodal_tab",
+      "src_components_diet_caloriering",
+      "src_components_diet_caloriering_caloriering",
+      "src_components_diet_caloriering_calorieringprops",
+      "src_components_diet_dietbutton",
+      "src_components_diet_dietbutton_dietbutton",
+      "src_components_diet_macrobar",
+      "src_components_diet_macrobar_bar",
+      "src_components_diet_macrobar_macrobarprops",
+      "src_components_diet_macrobar_macrobars",
+      "src_components_diet_macrobar_macrobarsprops",
+      "src_components_diet_mealsection",
+      "src_components_diet_mealsection_gramsbadge",
+      "src_components_diet_mealsection_macrocell",
+      "src_components_diet_mealsection_meal_labels",
+      "src_components_diet_mealsection_mealsection",
+      "src_components_diet_mealsection_mealsectionprops",
+      "src_components_diet_weightwidget",
+      "src_components_diet_weightwidget_weightentry",
+      "src_components_diet_weightwidget_weightwidget",
+      "src_components_diet_weightwidget_weightwidgetprops",
+      "src_components_health_sleepcard",
+      "src_components_health_sleepcard_formatduration",
+      "src_components_health_sleepcard_formattime",
+      "src_components_health_sleepcard_phase_colors",
+      "src_components_health_sleepcard_phase_labels",
+      "src_components_health_sleepcard_props",
+      "src_components_health_sleepcard_sleepcard",
+      "src_components_health_sleepcard_sleepdata",
+      "src_components_history_historybutton",
+      "src_components_history_historybutton_historybutton",
+      "src_lib_diet_processor_dietlogentry",
+      "src_lib_utils",
+      "src_lib_utils_cn"
+    ],
+    "1": [
+      "claude_backfill_script",
+      "claude_daily_summary_table",
+      "claude_device_ids",
+      "claude_ethernet_off_ambiguity",
+      "claude_fna_tracker",
+      "claude_health_tables",
+      "claude_history_layer",
+      "claude_location_detection",
+      "claude_macos_tracker",
+      "claude_metrics_table",
+      "claude_minute_slots",
+      "claude_postgrest_1000_row_cap",
+      "claude_prune_metrics_script",
+      "claude_screen_time_deduplication",
+      "claude_two_layer_data_strategy",
+      "claude_university_minutes_incident",
+      "gemini_fna_tracker",
+      "gemini_timeline_master",
+      "readme_ai_food_scanning",
+      "readme_diet_view",
+      "readme_fna_tracker",
+      "readme_raw_deleted_after_summary",
+      "scripts_debug_backfill",
+      "scripts_debug_backfill_runbackfill",
+      "scripts_debug_backfill_supabase",
+      "src_app_api_track_wearable_route",
+      "src_app_api_track_wearable_route_post",
+      "src_app_api_track_wearable_route_supabase",
+      "src_app_test_db_page",
+      "src_app_test_db_page_testdbpage",
+      "src_lib_data_processor",
+      "src_lib_data_processor_buildstatsfromsummary",
+      "src_lib_data_processor_cleanbooktitle",
+      "src_lib_data_processor_computesleephourlyminutes",
+      "src_lib_data_processor_dashboardstats",
+      "src_lib_data_processor_fetchallmetrics",
+      "src_lib_data_processor_formatdurationsec",
+      "src_lib_data_processor_formatwifiname",
+      "src_lib_data_processor_getdailystats",
+      "src_lib_data_processor_getreadingstreak",
+      "src_lib_data_processor_ignored_apps",
+      "src_lib_data_processor_pc_device_ids",
+      "src_lib_data_processor_supabase",
+      "src_lib_data_processor_tracked_device_ids",
+      "src_lib_data_processor_weeklydaystat"
+    ],
+    "2": [
+      "claude_recharts_mounted_guard",
+      "claude_server_component_client_island",
+      "src_components_dashboard_activitychart",
+      "src_components_dashboard_activitychart_activitychart",
+      "src_components_dashboard_dashboardcontent",
+      "src_components_dashboard_dashboardcontent_dashboardcontent",
+      "src_components_dashboard_dashboardcontent_dashboardcontentprops",
+      "src_components_dashboard_dashboardcontent_formatduration",
+      "src_components_dashboard_kpicard",
+      "src_components_dashboard_kpicard_kpicard",
+      "src_components_dashboard_kpicard_kpicardprops",
+      "src_components_dashboard_recentactivity",
+      "src_components_dashboard_recentactivity_event",
+      "src_components_dashboard_recentactivity_filterbutton",
+      "src_components_dashboard_recentactivity_formattime",
+      "src_components_dashboard_recentactivity_recentactivity",
+      "src_components_dashboard_weeklygrid",
+      "src_components_dashboard_weeklygrid_daystat",
+      "src_components_dashboard_weeklygrid_formathours",
+      "src_components_dashboard_weeklygrid_formatsleephours",
+      "src_components_dashboard_weeklygrid_weeklygrid",
+      "src_components_health_weeklyhealthgrid",
+      "src_components_health_weeklyhealthgrid_formatsteps",
+      "src_components_health_weeklyhealthgrid_stepscolor",
+      "src_components_health_weeklyhealthgrid_weeklyhealthgrid",
+      "src_lib_data_processor_getweeklystats",
+      "src_lib_health_processor",
+      "src_lib_health_processor_estimatecalories",
+      "src_lib_health_processor_gethealthdailystats",
+      "src_lib_health_processor_gethealthweeklytrend",
+      "src_lib_health_processor_healthdailystats",
+      "src_lib_health_processor_healthweekday",
+      "src_lib_health_processor_workout_display_names",
+      "src_lib_health_processor_workout_met",
+      "src_lib_health_processor_workoutentry"
+    ],
+    "3": [
+      "babel_plugin_react_compiler",
+      "eslint",
+      "eslint_config_next",
+      "package",
+      "package_devdependencies",
+      "package_devdependencies_babel_plugin_react_compiler",
+      "package_devdependencies_eslint",
+      "package_devdependencies_eslint_config_next",
+      "package_devdependencies_tailwindcss",
+      "package_devdependencies_tailwindcss_postcss",
+      "package_devdependencies_ts_node",
+      "package_devdependencies_tsx",
+      "package_devdependencies_types_node",
+      "package_devdependencies_types_react",
+      "package_devdependencies_types_react_dom",
+      "package_devdependencies_typescript",
+      "package_name",
+      "package_private",
+      "package_scripts",
+      "package_scripts_backfill",
+      "package_scripts_build",
+      "package_scripts_dev",
+      "package_scripts_lint",
+      "package_scripts_prune_metrics",
+      "package_scripts_start",
+      "package_version",
+      "tailwindcss",
+      "tailwindcss_postcss",
+      "ts_node",
+      "tsx",
+      "types_node",
+      "types_react",
+      "types_react_dom",
+      "typescript"
+    ],
+    "4": [
+      "src_app_api_diet_combos_id_route",
+      "src_app_api_diet_combos_id_route_delete",
+      "src_app_api_diet_combos_log_route",
+      "src_app_api_diet_combos_log_route_post",
+      "src_app_api_diet_combos_route",
+      "src_app_api_diet_combos_route_get",
+      "src_app_api_diet_combos_route_post",
+      "src_app_api_diet_food_items_id_route",
+      "src_app_api_diet_food_items_id_route_delete",
+      "src_app_api_diet_food_items_id_route_patch",
+      "src_app_api_diet_food_items_route",
+      "src_app_api_diet_food_items_route_get",
+      "src_app_api_diet_food_items_route_post",
+      "src_app_api_diet_goals_route",
+      "src_app_api_diet_goals_route_calcmacros",
+      "src_app_api_diet_goals_route_put",
+      "src_app_api_diet_log_id_route",
+      "src_app_api_diet_log_id_route_delete",
+      "src_app_api_diet_log_id_route_patch",
+      "src_app_api_diet_log_route",
+      "src_app_api_diet_log_route_post",
+      "src_app_api_diet_scan_route",
+      "src_app_api_diet_scan_route_client",
+      "src_app_api_diet_scan_route_parsejson",
+      "src_app_api_diet_scan_route_post",
+      "src_app_api_health_weight_route",
+      "src_app_api_health_weight_route_get",
+      "src_app_api_health_weight_route_post",
+      "src_app_api_health_weight_route_todaystr",
+      "src_lib_supabase",
+      "src_lib_supabase_supabase"
+    ],
+    "5": [
+      "ref_dom",
+      "ref_dom_iterable",
+      "ref_esnext",
+      "ref_mts",
+      "ref_next_dev_types_ts",
+      "ref_next_env_d_ts",
+      "ref_next_types_ts",
+      "ref_node_modules",
+      "ref_supabase",
+      "ref_ts",
+      "ref_tsx",
+      "tsconfig",
+      "tsconfig_compileroptions",
+      "tsconfig_compileroptions_allowjs",
+      "tsconfig_compileroptions_esmoduleinterop",
+      "tsconfig_compileroptions_incremental",
+      "tsconfig_compileroptions_isolatedmodules",
+      "tsconfig_compileroptions_jsx",
+      "tsconfig_compileroptions_lib",
+      "tsconfig_compileroptions_module",
+      "tsconfig_compileroptions_moduleresolution",
+      "tsconfig_compileroptions_noemit",
+      "tsconfig_compileroptions_paths",
+      "tsconfig_compileroptions_plugins",
+      "tsconfig_compileroptions_resolvejsonmodule",
+      "tsconfig_compileroptions_skiplibcheck",
+      "tsconfig_compileroptions_strict",
+      "tsconfig_compileroptions_target",
+      "tsconfig_exclude",
+      "tsconfig_include"
+    ],
+    "6": [
+      "src_app_history_page",
+      "src_app_history_page_historydata",
+      "src_app_history_page_historypage",
+      "src_app_history_page_historyskeleton",
+      "src_app_history_page_triggersummarize",
+      "src_components_history_historyview",
+      "src_components_history_historyview_aggregatedlist",
+      "src_components_history_historyview_datenavigator",
+      "src_components_history_historyview_formatminutes",
+      "src_components_history_historyview_historycard",
+      "src_components_history_historyview_historyview",
+      "src_components_history_historyview_periodselector",
+      "src_components_history_historyview_summarystat",
+      "src_lib_diet_processor",
+      "src_lib_diet_processor_dietdaysummary",
+      "src_lib_diet_processor_dietgoal",
+      "src_lib_diet_processor_fooditem",
+      "src_lib_diet_processor_getdietcaloriesforrange",
+      "src_lib_diet_processor_getdietdataforrange",
+      "src_lib_diet_processor_getgoal",
+      "src_lib_diet_processor_meal_order",
+      "src_lib_diet_processor_searchfooditems",
+      "src_lib_history_processor",
+      "src_lib_history_processor_gethistorydata",
+      "src_lib_history_processor_getyearlyfromdailysummary",
+      "src_lib_history_processor_historyitem",
+      "src_lib_history_processor_historypayload",
+      "src_lib_history_processor_mergesummaries",
+      "src_lib_history_processor_periodtype",
+      "src_lib_history_processor_tosortedarray"
+    ],
+    "7": [
+      "anthropic_ai_sdk",
+      "clsx",
+      "date_fns",
+      "date_fns_tz",
+      "dotenv",
+      "google_cloud_vertexai",
+      "lucide_react",
+      "next",
+      "package_dependencies",
+      "package_dependencies_anthropic_ai_sdk",
+      "package_dependencies_clsx",
+      "package_dependencies_date_fns",
+      "package_dependencies_date_fns_tz",
+      "package_dependencies_dotenv",
+      "package_dependencies_google_cloud_vertexai",
+      "package_dependencies_lucide_react",
+      "package_dependencies_next",
+      "package_dependencies_react",
+      "package_dependencies_react_dom",
+      "package_dependencies_recharts",
+      "package_dependencies_supabase_supabase_js",
+      "package_dependencies_tailwind_merge",
+      "react",
+      "react_dom",
+      "recharts",
+      "supabase_supabase_js",
+      "tailwind_merge"
+    ],
+    "8": [
+      "src_app_diet_page",
+      "src_app_diet_page_dietdata",
+      "src_app_diet_page_dietpage",
+      "src_app_diet_page_dietskeleton",
+      "src_components_dashboard_fadein",
+      "src_components_dashboard_fadein_fadein",
+      "src_components_diet_authbutton",
+      "src_components_diet_authbutton_authbutton",
+      "src_components_diet_dietcontent",
+      "src_components_diet_dietcontent_dietcontent",
+      "src_components_diet_dietcontent_dietcontentprops",
+      "src_components_diet_dietcontent_meals",
+      "src_components_diet_dietdatenavigator",
+      "src_components_diet_dietdatenavigator_dietdatenavigator",
+      "src_lib_diet_processor_dietdaystats",
+      "src_lib_diet_processor_getdietdaystats"
+    ],
+    "9": [
+      "claude_environment_variables",
+      "claude_nextjs_deno_logic_duplication",
+      "claude_rollup_summary_tables",
+      "src_app_api_summarize_route",
+      "src_app_api_summarize_route_post",
+      "supabase_functions_summarize_daily_index",
+      "supabase_functions_summarize_daily_index_calculatedailystats",
+      "supabase_functions_summarize_daily_index_cleanbooktitle",
+      "supabase_functions_summarize_daily_index_dashboardstats",
+      "supabase_functions_summarize_daily_index_deleteallmetrics",
+      "supabase_functions_summarize_daily_index_fetchallmetrics",
+      "supabase_functions_summarize_daily_index_mergejsonsummaries",
+      "supabase_functions_summarize_daily_index_processday",
+      "supabase_functions_summarize_daily_index_updateperiodsummary",
+      "supabase_migrations_20260924000001_setup_cron"
+    ],
+    "10": [
+      "scripts_backfill_summaries",
+      "scripts_backfill_summaries_args",
+      "scripts_backfill_summaries_buildsummaryrow",
+      "scripts_backfill_summaries_dataprocessor",
+      "scripts_backfill_summaries_dryrun",
+      "scripts_backfill_summaries_force",
+      "scripts_backfill_summaries_from",
+      "scripts_backfill_summaries_getarg",
+      "scripts_backfill_summaries_mergejsonsummaries",
+      "scripts_backfill_summaries_run",
+      "scripts_backfill_summaries_stats",
+      "scripts_backfill_summaries_supabase",
+      "scripts_backfill_summaries_to",
+      "scripts_backfill_summaries_todaystr",
+      "scripts_backfill_summaries_updateperiodsummary"
+    ],
+    "11": [
+      "claude_live_dashboard_layer",
+      "claude_santiago_timezone",
+      "src_app_page",
+      "src_app_page_home",
+      "src_components_dashboard_dashboardskeleton",
+      "src_components_dashboard_dashboardskeleton_dashboardskeleton",
+      "src_components_dashboard_datenavigator",
+      "src_components_dashboard_datenavigator_datenavigator",
+      "src_components_dashboard_realtimerefresher",
+      "src_components_dashboard_realtimerefresher_realtimerefresher",
+      "src_components_dashboard_santiagoclock",
+      "src_components_dashboard_santiagoclock_santiagoclock"
+    ],
+    "12": [
+      "scripts_prune_metrics",
+      "scripts_prune_metrics_args",
+      "scripts_prune_metrics_confirm",
+      "scripts_prune_metrics_countmetrics",
+      "scripts_prune_metrics_dayboundsutc",
+      "scripts_prune_metrics_deleteall",
+      "scripts_prune_metrics_from",
+      "scripts_prune_metrics_getarg",
+      "scripts_prune_metrics_run",
+      "scripts_prune_metrics_supabase",
+      "scripts_prune_metrics_to",
+      "scripts_prune_metrics_todaystr"
+    ],
+    "13": [
+      "claude_usage_summary_1min",
+      "scripts_start_tracker",
+      "scripts_track_activity",
+      "scripts_track_activity_here",
+      "scripts_track_activity_lock",
+      "scripts_track_activity_log",
+      "scripts_track_activity_log_file",
+      "scripts_track_activity_publish",
+      "scripts_track_activity_startsampler",
+      "scripts_track_activity_supabase"
+    ],
+    "14": [
+      "public_manifest",
+      "public_manifest_background_color",
+      "public_manifest_description",
+      "public_manifest_display",
+      "public_manifest_icons",
+      "public_manifest_name",
+      "public_manifest_short_name",
+      "public_manifest_start_url",
+      "public_manifest_theme_color"
+    ],
+    "15": [
+      "public_sand_clock",
+      "src_app_layout",
+      "src_app_layout_geistmono",
+      "src_app_layout_geistsans",
+      "src_app_layout_metadata",
+      "src_app_layout_rootlayout",
+      "src_app_layout_viewport"
+    ],
+    "16": [
+      "src_components_dashboard_appslist",
+      "src_components_dashboard_appslist_appitem",
+      "src_components_dashboard_appslist_appslist",
+      "src_components_dashboard_appslist_appslistprops",
+      "src_components_dashboard_appslist_formattime",
+      "src_components_dashboard_appslist_short_labels",
+      "src_components_dashboard_appslist_tabbutton"
+    ],
+    "17": [
+      "src_components_dashboard_locationcard",
+      "src_components_dashboard_locationcard_formatlastseen",
+      "src_components_dashboard_locationcard_formattime",
+      "src_components_dashboard_locationcard_getbatterycolor",
+      "src_components_dashboard_locationcard_legenditem",
+      "src_components_dashboard_locationcard_locationcard",
+      "src_components_dashboard_locationcard_props"
+    ],
+    "18": [
+      "src_components_health_workoutcard",
+      "src_components_health_workoutcard_formatduration",
+      "src_components_health_workoutcard_formatworkoutdate",
+      "src_components_health_workoutcard_getworkouticon",
+      "src_components_health_workoutcard_props",
+      "src_components_health_workoutcard_workout",
+      "src_components_health_workoutcard_workoutcard"
+    ],
+    "19": [
+      "supabase_functions_deno",
+      "supabase_functions_deno_imports",
+      "supabase_functions_deno_imports_date_fns",
+      "supabase_functions_deno_imports_date_fns_locale",
+      "supabase_functions_deno_imports_date_fns_tz",
+      "supabase_functions_deno_imports_supabase_supabase_js"
+    ],
+    "20": [
+      "supabase_migrations_20260307130000_diet_system",
+      "supabase_migrations_20260307130000_diet_system_diet_goals",
+      "supabase_migrations_20260307130000_diet_system_diet_log",
+      "supabase_migrations_20260307130000_diet_system_food_items",
+      "supabase_migrations_20260307130000_diet_system_recipe_ingredients",
+      "supabase_migrations_20260307130000_diet_system_recipes"
+    ],
+    "21": [
+      "supabase_migrations_20260307150000_diet_normalize",
+      "supabase_migrations_20260307150000_diet_normalize_combo_items",
+      "supabase_migrations_20260307150000_diet_normalize_diet_log",
+      "supabase_migrations_20260307150000_diet_normalize_food_items",
+      "supabase_migrations_20260307150000_diet_normalize_meal_combos",
+      "supabase_migrations_20260307150000_diet_normalize_search_food_items"
+    ],
+    "22": [
+      "scripts_debug_supabase",
+      "scripts_debug_supabase_env",
+      "scripts_debug_supabase_loadenv",
+      "scripts_debug_supabase_supabase",
+      "scripts_debug_supabase_test"
+    ],
+    "23": [
+      "src_components_health_stresschart",
+      "src_components_health_stresschart_props",
+      "src_components_health_stresschart_stresschart",
+      "src_components_health_stresschart_stresscolor",
+      "src_components_health_stresschart_stresslabel"
+    ],
+    "24": [
+      "src_middleware",
+      "src_middleware_config",
+      "src_middleware_middleware",
+      "src_middleware_public_write_paths",
+      "src_middleware_write_methods"
+    ],
+    "25": [
+      "supabase_migrations_20260218000000_create_summary_tables",
+      "supabase_migrations_20260218000000_create_summary_tables_daily_summary",
+      "supabase_migrations_20260218000000_create_summary_tables_monthly_summary",
+      "supabase_migrations_20260218000000_create_summary_tables_weekly_summary",
+      "supabase_migrations_20260218000000_create_summary_tables_yearly_summary"
+    ],
+    "26": [
+      "supabase_migrations_20260221000000_create_health_tables",
+      "supabase_migrations_20260221000000_create_health_tables_health_daily_metrics",
+      "supabase_migrations_20260221000000_create_health_tables_health_sleep_sessions",
+      "supabase_migrations_20260221000000_create_health_tables_health_workouts"
+    ],
+    "27": [
+      "scripts_check_books",
+      "scripts_check_books_checkbooks",
+      "scripts_check_books_supabase"
+    ],
+    "28": [
+      "scripts_check_db",
+      "scripts_check_db_check",
+      "scripts_check_db_supabase"
+    ],
+    "29": [
+      "scripts_check_games",
+      "scripts_check_games_checkgames",
+      "scripts_check_games_supabase"
+    ],
+    "30": [
+      "scripts_check_reading_time",
+      "scripts_check_reading_time_checkmobilereading",
+      "scripts_check_reading_time_supabase"
+    ],
+    "31": [
+      "scripts_test_db",
+      "scripts_test_db_supabase",
+      "scripts_test_db_test"
+    ],
+    "32": [
+      "scripts_test_gemini_cloud",
+      "scripts_test_gemini_cloud_generatecontent",
+      "scripts_test_gemini_cloud_vertex_ai"
+    ],
+    "33": [
+      "scripts_test_idle",
+      "scripts_test_idle_execasync",
+      "scripts_test_idle_getidletime"
+    ],
+    "34": [
+      "scripts_test_window_title",
+      "scripts_test_window_title_execasync",
+      "scripts_test_window_title_test"
+    ],
+    "35": [
+      "src_app_api_diet_food_items_serving_hint_route",
+      "src_app_api_diet_food_items_serving_hint_route_client",
+      "src_app_api_diet_food_items_serving_hint_route_get"
+    ],
+    "36": [
+      "src_app_api_track_health_route",
+      "src_app_api_track_health_route_post",
+      "src_app_api_track_health_route_supabase"
+    ],
+    "37": [
+      "src_components_health_heartratechart",
+      "src_components_health_heartratechart_heartratechart",
+      "src_components_health_heartratechart_props"
+    ],
+    "38": [
+      "src_components_health_weightchart",
+      "src_components_health_weightchart_props",
+      "src_components_health_weightchart_weightchart"
+    ],
+    "39": [
+      "supabase_migrations_20260307160000_diet_fk_set_null",
+      "supabase_migrations_20260307160000_diet_fk_set_null_combo_items",
+      "supabase_migrations_20260307160000_diet_fk_set_null_diet_log"
+    ],
+    "40": [
+      "test_genshin",
+      "test_genshin_check",
+      "test_genshin_supabase"
+    ],
+    "41": [
+      "eslint_config",
+      "eslint_config_eslintconfig"
+    ],
+    "42": [
+      "mcp",
+      "mcp_mcp_server_supabase"
+    ],
+    "43": [
+      "next_config",
+      "next_config_nextconfig"
+    ],
+    "44": [
+      "postcss_config",
+      "postcss_config_config"
+    ],
+    "45": [
+      "src_app_api_auth_login_route",
+      "src_app_api_auth_login_route_post"
+    ],
+    "46": [
+      "src_app_api_auth_logout_route",
+      "src_app_api_auth_logout_route_post"
+    ],
+    "47": [
+      "supabase_migrations_20260307000000_fix_health_rls_and_weight_log",
+      "supabase_migrations_20260307000000_fix_health_rls_and_weight_log_health_weight_log"
+    ],
+    "48": [
+      "supabase_migrations_20260307140000_health_weight_log",
+      "supabase_migrations_20260307140000_health_weight_log_health_weight_log"
+    ],
+    "49": [
+      "supabase_migrations_20260310000000_diet_meals_summary",
+      "supabase_migrations_20260310000000_diet_meals_summary_daily_summary"
+    ],
+    "50": [
+      "supabase_migrations_20260322000000_health_workouts_unique_start_time",
+      "supabase_migrations_20260322000000_health_workouts_unique_start_time_health_workouts"
+    ],
+    "51": [
+      "supabase_migrations_20260924000000_add_university_minutes",
+      "supabase_migrations_20260924000000_add_university_minutes_daily_summary"
+    ],
+    "52": [
+      "public_file"
+    ],
+    "53": [
+      "public_globe"
+    ],
+    "54": [
+      "public_next"
+    ],
+    "55": [
+      "public_vercel"
+    ],
+    "56": [
+      "public_window"
+    ],
+    "57": [
+      "supabase_migrations_20260307120000_fix_sleep_rls_update"
+    ]
+  },
+  "cohesion": {
+    "0": 0.058823529411764705,
+    "1": 0.06161616161616162,
+    "2": 0.0773109243697479,
+    "3": 0.058823529411764705,
+    "4": 0.09462365591397849,
+    "5": 0.06666666666666667,
+    "6": 0.11494252873563218,
+    "7": 0.07407407407407407,
+    "8": 0.15833333333333333,
+    "9": 0.18095238095238095,
+    "10": 0.18095238095238095,
+    "11": 0.21212121212121213,
+    "12": 0.25757575757575757,
+    "13": 0.26666666666666666,
+    "14": 0.2222222222222222,
+    "15": 0.2857142857142857,
+    "16": 0.3333333333333333,
+    "17": 0.42857142857142855,
+    "18": 0.42857142857142855,
+    "19": 0.3333333333333333,
+    "20": 0.6,
+    "21": 0.5333333333333333,
+    "22": 0.4,
+    "23": 0.6,
+    "24": 0.6,
+    "25": 0.4,
+    "26": 0.5,
+    "27": 0.6666666666666666,
+    "28": 0.6666666666666666,
+    "29": 0.6666666666666666,
+    "30": 0.6666666666666666,
+    "31": 0.6666666666666666,
+    "32": 1.0,
+    "33": 1.0,
+    "34": 1.0,
+    "35": 0.6666666666666666,
+    "36": 0.6666666666666666,
+    "37": 0.6666666666666666,
+    "38": 0.6666666666666666,
+    "39": 0.6666666666666666,
+    "40": 0.6666666666666666,
+    "41": 1.0,
+    "42": 1.0,
+    "43": 1.0,
+    "44": 1.0,
+    "45": 1.0,
+    "46": 1.0,
+    "47": 1.0,
+    "48": 1.0,
+    "49": 1.0,
+    "50": 1.0,
+    "51": 1.0,
+    "52": 1.0,
+    "53": 1.0,
+    "54": 1.0,
+    "55": 1.0,
+    "56": 1.0,
+    "57": 1.0
+  },
+  "gods": [
+    {
+      "id": "src_lib_utils_cn",
+      "label": "cn()",
+      "degree": 29
+    },
+    {
+      "id": "src_lib_data_processor_getdailystats",
+      "label": "getDailyStats()",
+      "degree": 21
+    },
+    {
+      "id": "tsconfig_compileroptions",
+      "label": "compilerOptions",
+      "degree": 16
+    },
+    {
+      "id": "src_lib_supabase_supabase",
+      "label": "supabase",
+      "degree": 14
+    },
+    {
+      "id": "src_lib_history_processor_gethistorydata",
+      "label": "getHistoryData()",
+      "degree": 9
+    },
+    {
+      "id": "claude_daily_summary_table",
+      "label": "daily_summary table",
+      "degree": 9
+    },
+    {
+      "id": "claude_metrics_table",
+      "label": "metrics table (raw)",
+      "degree": 8
+    },
+    {
+      "id": "package_scripts",
+      "label": "scripts",
+      "degree": 7
+    },
+    {
+      "id": "src_lib_history_processor_getyearlyfromdailysummary",
+      "label": "getYearlyFromDailySummary()",
+      "degree": 7
+    },
+    {
+      "id": "tsconfig_include",
+      "label": "include",
+      "degree": 7
+    }
+  ],
+  "surprises": [
+    {
+      "source": "F\u00f1a Tracker (gemini.md guide)",
+      "target": "F\u00f1a Tracker (CLAUDE.md guide)",
+      "source_files": [
+        "gemini.md",
+        "CLAUDE.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link; peripheral node `F\u00f1a Tracker (CLAUDE.md guide)` unexpectedly reaches hub `F\u00f1a Tracker (gemini.md guide)`"
+    },
+    {
+      "source": "getWeeklyStats()",
+      "target": "daily_summary table",
+      "source_files": [
+        "src/lib/data-processor.ts",
+        "CLAUDE.md"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "crosses file types (code \u2194 doc); connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "npm run backfill",
+      "target": "getDailyStats()",
+      "source_files": [
+        "CLAUDE.md",
+        "src/lib/data-processor.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "crosses file types (code \u2194 doc); connects across different repos/directories; peripheral node `npm run backfill` unexpectedly reaches hub `getDailyStats()`"
+    },
+    {
+      "source": "getHistoryData()",
+      "target": "daily_summary table",
+      "source_files": [
+        "src/lib/history-processor.ts",
+        "CLAUDE.md"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "crosses file types (code \u2194 doc); connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "getYearlyFromDailySummary()",
+      "target": "daily_summary table",
+      "source_files": [
+        "src/lib/history-processor.ts",
+        "CLAUDE.md"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "crosses file types (code \u2194 doc); connects across different repos/directories; bridges separate communities"
+    }
+  ],
+  "tokens": {
+    "input": 55193,
+    "output": 14873
+  }
+}

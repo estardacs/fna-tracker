@@ -160,18 +160,25 @@ Exports three functions:
 - `simultaneousMinutes` = (totalPcMs + totalMobileMs) − exactDedupMs
 
 ### Location Detection
-Based on `metadata.wifi_ssid` on each event:
-- `'GeCo'` → **Oficina** (Office) — former workplace, last seen 2026-08-19. Kept because
-  9051 raw rows between February and August depend on it; the network no longer exists
-  for the user, so the rule can never match new data.
-- Contains `'Depto 402'` OR equals `'Ethernet/Off'` → **Casa** (Home)
-- `'eduroam'` → **Universidad** (University)
-- `'PC Escritorio'` device always uses Home as default when SSID is not GeCo
-- Everything else → **Fuera** (Outside)
+Based on `metadata.wifi_ssid` on each event. There are only **four** location categories
+(`office`, `home`, `outside`, `university`) because `daily_summary` has one column each —
+adding a fifth means a migration plus changes to the rollups and charts.
 
-The same rules are duplicated in three places in `data-processor.ts` (`formatWifiName`
-plus two inline mappings) and twice in the Edge Function. Changing one means changing all
-five.
+| SSID | Category | Shown as |
+|---|---|---|
+| `IF-Comunidad` | `office` | **Diio** — current workplace |
+| `GeCo` | `office` | **Oficina** — former workplace, last seen 2026-08-19 |
+| contains `Depto 402`, or `Ethernet/Off` | `home` | Casa |
+| `eduroam` | `university` | Universidad |
+| anything else | `outside` | Fuera |
+
+`GeCo` is kept because 9051 raw rows between February and August depend on it; that
+network no longer exists for the user, so the rule can never match new data.
+
+Office SSIDs live in the `OFFICE_SSIDS` set — once in `data-processor.ts`, mirrored once
+in the Edge Function. Adding a workplace means editing those two sets. The *display*
+names are separate, in `formatWifiName` (Next.js only), since two offices share one
+category but should not share a label.
 
 > **Known limitation — `Ethernet/Off` is ambiguous.** A wired connection carries no SSID,
 > so it cannot distinguish one location from another; it is currently assumed to be Home.

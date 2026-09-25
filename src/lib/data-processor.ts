@@ -46,8 +46,15 @@ async function fetchAllMetrics(startIso: string, endIso: string, deviceIds: stri
   return all;
 }
 
+// Networks that count as office time. 'GeCo' is the former workplace (last seen
+// 2026-08-19) and is kept so historical days still resolve; 'IF-Comunidad' is the
+// current one. Both map to the same `office` category — the schema has four fixed
+// location buckets — but they display under their own names.
+const OFFICE_SSIDS = new Set(['GeCo', 'IF-Comunidad']);
+
 const formatWifiName = (ssid: string | undefined): string => {
   if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet' || ssid === 'SIN_SSID') return 'Desconocido';
+  if (ssid === 'IF-Comunidad') return 'Diio';
   if (ssid === 'GeCo') return 'Oficina';
   if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'Casa';
   if (ssid === 'eduroam' || ssid === 'Eduroam') return 'Universidad';
@@ -265,11 +272,11 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const getLocationType = (wifi: string | undefined, deviceId?: string, appName?: string): 'office' | 'home' | 'outside' | 'university' => {
     const ssid = wifi ? wifi.trim() : '';
     if (deviceId === 'PC Escritorio') {
-        if (ssid === 'GeCo') return 'office';
+        if (OFFICE_SSIDS.has(ssid)) return 'office';
         if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
         return 'home';
     }
-    if (ssid === 'GeCo') return 'office';
+    if (OFFICE_SSIDS.has(ssid)) return 'office';
     if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'home';
     if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
     return 'outside';

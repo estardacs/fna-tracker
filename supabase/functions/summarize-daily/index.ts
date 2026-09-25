@@ -32,6 +32,10 @@ const cleanBookTitle = (title: string | undefined): string => {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 };
 
+// Mirrors OFFICE_SSIDS in src/lib/data-processor.ts — keep both in sync.
+// 'GeCo' is the former workplace (through 2026-08-19); 'IF-Comunidad' is the current one.
+const OFFICE_SSIDS = new Set(['GeCo', 'IF-Comunidad']);
+
 const METRICS_PAGE_SIZE = 1000;
 
 // Days summarized per invocation. Bounded so a long backlog cannot exceed the
@@ -143,12 +147,12 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
   const getLocationType = (wifi: string | undefined, deviceId?: string): 'office' | 'home' | 'outside' | 'university' => {
     const ssid = wifi ? wifi.trim() : '';
     if (deviceId === 'PC Escritorio') {
-      if (ssid === 'GeCo') return 'office';
+      if (OFFICE_SSIDS.has(ssid)) return 'office';
       if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
       return 'home';
     }
     if (!ssid) return 'outside';
-    if (ssid === 'GeCo') return 'office';
+    if (OFFICE_SSIDS.has(ssid)) return 'office';
     if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'home';
     if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
     return 'outside';
