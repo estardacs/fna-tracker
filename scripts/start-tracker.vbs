@@ -1,23 +1,30 @@
 ' Silent autostart for track-activity.mjs on Windows (native Node, no WSL).
 '
-' Install: press Win+R, run  shell:startup  , and drop a shortcut to this file there.
-' It launches Node with no console window and does not wait for it to finish.
+' Install: press Win+R, run  shell:startup  , and drop a SHORTCUT to this file there.
 '
-' Adjust TRACKER_DIR to wherever the project lives on this machine.
+' The project directory is resolved from this script's own location, so there is
+' nothing to edit — it works from wherever the repo is cloned, under any username.
 
-Const TRACKER_DIR = "C:\Users\estarducs\fna-tracker"
-
-Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
+Set shell = CreateObject("WScript.Shell")
 
-script = fso.BuildPath(TRACKER_DIR, "scripts\track-activity.mjs")
+scriptsDir = fso.GetParentFolderName(WScript.ScriptFullName)
+projectDir = fso.GetParentFolderName(scriptsDir)
+tracker = fso.BuildPath(scriptsDir, "track-activity.mjs")
 
-If Not fso.FileExists(script) Then
-    MsgBox "Tracker not found at:" & vbCrLf & script & vbCrLf & vbCrLf & _
-           "Edit TRACKER_DIR in start-tracker.vbs.", vbExclamation, "fna-tracker"
+If Not fso.FileExists(tracker) Then
+    MsgBox "Tracker not found at:" & vbCrLf & tracker, vbExclamation, "fna-tracker"
     WScript.Quit 1
 End If
 
-' 0 = hidden window, False = don't wait. Quotes guard paths containing spaces.
-shell.CurrentDirectory = TRACKER_DIR
-shell.Run "node """ & script & """", 0, False
+If Not fso.FolderExists(fso.BuildPath(projectDir, "node_modules")) Then
+    MsgBox "Dependencies are missing. Run this first:" & vbCrLf & vbCrLf & _
+           "cd """ & projectDir & """" & vbCrLf & "npm install", _
+           vbExclamation, "fna-tracker"
+    WScript.Quit 1
+End If
+
+' Run from the project root so .env.local and node_modules resolve.
+' 0 = hidden window, False = don't wait for it to exit.
+shell.CurrentDirectory = projectDir
+shell.Run "node """ & tracker & """", 0, False
