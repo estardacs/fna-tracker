@@ -325,11 +325,67 @@ Simple POST endpoint for the Xiaomi Band. Validates `secret === 'fna-tracker-upl
 
 ---
 
+## Diet system & MCP server
+
+Tables: `food_items` (53 rows, per-100g macros plus a reference serving), `diet_log`
+(one row per food eaten), `meal_combos` + `combo_items` (saved meals), `diet_goals`
+(single row, id=1), `health_weight_log`. The `/diet` page and `/api/diet/*` routes drive
+the UI; `recipes`/`recipe_ingredients` were dropped in `20260925000000` — never used.
+
+Three fields exist specifically to keep the data honest:
+
+- **`diet_log.status`** — `planned` vs `confirmed`. Logging an intended day and then
+  eating something else is the mistake this whole system exists to catch, so totals and
+  `progress` count only confirmed rows.
+- **`food_items.source`** — `label` / `web` / `estimated`, with `verified_at`. NULL means
+  unknown, which is what the pre-existing items are.
+- **`diet_goals.tdee_calories`** plus height, birth year, sex and activity factor, so
+  `recalculate_tdee` can redo Mifflin-St Jeor as weight drops instead of leaving a figure
+  that was only true the day it was computed.
+
+`meal_combos.servings` divides a batch-cooked recipe: logging one portion of a 4-serving
+meal prep scales every ingredient by ¼.
+
+### `/api/mcp`
+
+Streamable HTTP MCP server (`mcp-handler` v2), so Claude Desktop, Claude Code and — if
+`static_headers` is enabled on the account — mobile can all log meals by chat. Eleven
+tools: `search_foods`, `log_food`, `list_combos`, `log_combo`, `create_food`,
+`day_summary`, `confirm_day`, `delete_entry`, `progress`, `log_weight`,
+`recalculate_tdee`.
+
+All logic lives in `src/lib/diet-service.ts`; the route is a thin wrapper, so replacing
+bearer auth with OAuth touches one function. **Tools never accept macro values for an
+existing food** — they take an id and the server derives everything from `*_per_100g`,
+so a model cannot invent nutrition data.
+
+Auth is a fixed bearer token in `MCP_TOKEN`, checked inside the route. `middleware.ts`
+gates every other `POST /api/*` on an admin cookie that no MCP client can present, so
+`/api/mcp` is listed in `PUBLIC_WRITE_PATHS` — exempt from the cookie check, not from
+authentication.
+
+Test locally with the inspector, or by hand:
+
+```bash
+curl -s -X POST http://localhost:3000/api/mcp \
+  -H "Authorization: Bearer $MCP_TOKEN" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+> **Security note:** every diet table has an `anon_all` RLS policy granting full read and
+> write to the anon key, which ships in the browser bundle. The Next.js middleware is the
+> only real gate, and it does not protect direct PostgREST access. Tightening this means
+> moving the API routes to `service_role`.
+
+---
+
 ## Environment Variables
 
 ```
 NEXT_PUBLIC_SUPABASE_URL       # Supabase project URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY  # Supabase anon key (safe for browser)
+MCP_TOKEN                      # Bearer token for the /api/mcp server (Claude Desktop / mobile)
 SUMMARIZER_SECRET              # Secret for authenticating calls to summarize-daily Edge Function
                                # Used by: /history page, /api/summarize route, and the Edge Function itself
 ```

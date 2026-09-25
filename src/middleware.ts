@@ -9,6 +9,9 @@ const PUBLIC_WRITE_PATHS = [
   '/api/summarize',
   '/api/auth/login',
   '/api/auth/logout',
+  // MCP clients cannot present the admin cookie; /api/mcp authenticates itself with a
+  // bearer token. Exempt from this check, not from authentication.
+  '/api/mcp',
 ];
 
 export function middleware(req: NextRequest) {
