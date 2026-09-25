@@ -190,7 +190,13 @@ function startSampler() {
     }
   });
 
-  child.stderr.on('data', d => log(`[tracker] powershell: ${String(d).trim()}`));
+  child.stderr.on('data', d => {
+    // PowerShell writes a CLIXML preamble to stderr on startup. It is not an error, and
+    // logging it on every sampler restart would bury the messages that do matter.
+    const text = String(d).trim();
+    if (!text || text.startsWith('#< CLIXML')) return;
+    log(`[tracker] powershell: ${text}`);
+  });
 
   // The sampler loops forever, so any exit is a failure. Back off up to a minute so a
   // persistent problem does not spin, and keep the process alive across sleep/resume.
@@ -224,6 +230,8 @@ lock.once('error', err => {
 });
 
 lock.listen(LOCK_PORT, '127.0.0.1', () => {
-  log(`[tracker] running as "${DEVICE_ID}" — one row per active minute.`);
+  // ASCII only: Get-Content reads the log as ANSI by default, so an em dash arrives
+  // mangled on the one screen you would read when something has gone wrong.
+  log(`[tracker] running as "${DEVICE_ID}" - one row per active minute.`);
   startSampler();
 });
