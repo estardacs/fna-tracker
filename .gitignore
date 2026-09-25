@@ -43,3 +43,6 @@ GEMINI.md
 
 # supabase CLI local state
 supabase/.temp/
+
+# Windows NTFS alternate data streams (created when a file is downloaded)
+*:Zone.Identifier
