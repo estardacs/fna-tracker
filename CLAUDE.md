@@ -161,10 +161,27 @@ Exports three functions:
 
 ### Location Detection
 Based on `metadata.wifi_ssid` on each event:
-- `'GeCo'` → **Oficina** (Office)
+- `'GeCo'` → **Oficina** (Office) — former workplace, last seen 2026-08-19. Kept because
+  9051 raw rows between February and August depend on it; the network no longer exists
+  for the user, so the rule can never match new data.
 - Contains `'Depto 402'` OR equals `'Ethernet/Off'` → **Casa** (Home)
+- `'eduroam'` → **Universidad** (University)
 - `'PC Escritorio'` device always uses Home as default when SSID is not GeCo
 - Everything else → **Fuera** (Outside)
+
+The same rules are duplicated in three places in `data-processor.ts` (`formatWifiName`
+plus two inline mappings) and twice in the Edge Function. Changing one means changing all
+five.
+
+> **Known limitation — `Ethernet/Off` is ambiguous.** A wired connection carries no SSID,
+> so it cannot distinguish one location from another; it is currently assumed to be Home.
+> That holds today because the only reporting PC is the Zenbook, a personal machine that
+> lives at home. It breaks the moment a tracked machine is wired up somewhere else — which
+> is exactly what the work MacBook will be. Resolving it needs a second network
+> fingerprint, most reliably the default gateway's MAC address (unique per router, unlike
+> the subnet). Capture it in `metadata` and branch on it when `wifi_ssid` is `Ethernet/Off`.
+> Design this together with the macOS tracker rather than retrofitting it onto the Zenbook,
+> where the ambiguity does not yet exist.
 
 ### Game Detection
 Hardcoded in `data-processor.ts`:
