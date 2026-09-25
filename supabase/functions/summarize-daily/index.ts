@@ -36,6 +36,17 @@ const cleanBookTitle = (title: string | undefined): string => {
 // 'GeCo' is the former workplace (through 2026-08-19); 'IF-Comunidad' is the current one.
 const OFFICE_SSIDS = new Set(['GeCo', 'IF-Comunidad']);
 
+// Mirrors GAME_TITLES in src/lib/data-processor.ts — keep both in sync.
+// Riot's launcher processes (LeagueClientUx, Riot Client) are deliberately absent:
+// that is menu and queue time, not time spent playing.
+const GAME_TITLES: Record<string, string> = {
+  'League of Legends': 'League of Legends',
+  'TFTClient-Win64-Shipping': 'Teamfight Tactics',
+  'Endfield': 'Arknights: Endfield',
+  'GenshinImpact': 'Genshin Impact',
+  'Genshin Impact': 'Genshin Impact',
+};
+
 const METRICS_PAGE_SIZE = 1000;
 
 // Days summarized per invocation. Bounded so a long backlog cannot exceed the
@@ -175,12 +186,9 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
       if (sec > 0 && app !== 'Idle (Inactivo)' && !IGNORED_APPS.includes(app)) {
         totalSecondsInBatch += sec;
         let cleanApp = app === 'System/Unknown' ? 'Sistema' : app;
-        let isGame = false, gameTitle = '';
-        if (cleanApp === 'League of Legends') { isGame = true; gameTitle = 'League of Legends'; }
-        else if (cleanApp === 'Endfield') { isGame = true; gameTitle = 'Arknights: Endfield'; }
-        else if (cleanApp === 'GenshinImpact' || cleanApp === 'Genshin Impact') { isGame = true; gameTitle = 'Genshin Impact'; }
+        const gameTitle = GAME_TITLES[cleanApp];
 
-        if (isGame) {
+        if (gameTitle) {
           totalGamingSeconds += sec;
           gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + sec);
         }

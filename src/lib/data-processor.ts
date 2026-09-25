@@ -52,6 +52,17 @@ async function fetchAllMetrics(startIso: string, endIso: string, deviceIds: stri
 // location buckets — but they display under their own names.
 const OFFICE_SSIDS = new Set(['GeCo', 'IF-Comunidad']);
 
+// Process name (as the tracker reports it) → title shown in the dashboard.
+// Riot's launcher processes — LeagueClientUx, Riot Client — are deliberately absent:
+// that is menu and queue time, not time spent playing.
+const GAME_TITLES: Record<string, string> = {
+  'League of Legends': 'League of Legends',
+  'TFTClient-Win64-Shipping': 'Teamfight Tactics',
+  'Endfield': 'Arknights: Endfield',
+  'GenshinImpact': 'Genshin Impact',
+  'Genshin Impact': 'Genshin Impact',
+};
+
 const formatWifiName = (ssid: string | undefined): string => {
   if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet' || ssid === 'SIN_SSID') return 'Desconocido';
   if (ssid === 'IF-Comunidad') return 'Diio';
@@ -319,11 +330,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
           if (sec > 0 && app !== 'Idle (Inactivo)' && !IGNORED_APPS.includes(app)) {
             totalSeconds += sec;
             let cleanApp = app === 'System/Unknown' ? 'Sistema' : app;
-            let isGame = false, gameTitle = '';
-            if (cleanApp === 'League of Legends') { isGame = true; gameTitle = 'League of Legends'; }
-            else if (cleanApp === 'Endfield') { isGame = true; gameTitle = 'Arknights: Endfield'; }
-            else if (cleanApp === 'GenshinImpact' || cleanApp === 'Genshin Impact') { isGame = true; gameTitle = 'Genshin Impact'; }
-            if (isGame) { totalGamingSeconds += sec; gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + sec); }
+            const gameTitle = GAME_TITLES[cleanApp];
+            if (gameTitle) { totalGamingSeconds += sec; gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + sec); }
             const min = sec / 60;
             pcAppsMapAll.set(cleanApp, (pcAppsMapAll.get(cleanApp) || 0) + min);
             addDeviceApp(deviceName, cleanApp, min);
@@ -350,11 +358,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         if (IGNORED_APPS.includes(row.metadata?.process_name)) continue;
         const minutes = Number(row.value) || 1; 
         totalPcSeconds += minutes * 60;
-        let isGame = false, gameTitle = '';
-        if (row.metadata?.process_name === 'League of Legends') { isGame = true; gameTitle = 'League of Legends'; }
-        else if (row.metadata?.process_name === 'Endfield') { isGame = true; gameTitle = 'Arknights: Endfield'; }
-        else if (row.metadata?.process_name === 'GenshinImpact' || row.metadata?.process_name === 'Genshin Impact') { isGame = true; gameTitle = 'Genshin Impact'; }
-        if (isGame) { totalGamingSeconds += minutes * 60; gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + (minutes * 60)); }
+        const gameTitle = GAME_TITLES[row.metadata?.process_name];
+        if (gameTitle) { totalGamingSeconds += minutes * 60; gamesMap.set(gameTitle, (gamesMap.get(gameTitle) || 0) + (minutes * 60)); }
         markSlot(row.created_at, minutes * 60, priority);
         const sT = new Date(row.created_at).getTime();
         allIntervals.push({ start: sT, end: sT + (minutes * 60 * 1000) });
