@@ -118,20 +118,64 @@ function redact(s: string, secrets: string[]): string {
 
 // ─── Credenciales ────────────────────────────────────────────────────────────────────
 
-function ask(question: string, hidden: boolean): Promise<string> {
+/**
+ * UNA sola interfaz de readline para toda la sesión, reutilizada en cada prompt.
+ *
+ * Crear una por pregunta parece inocuo y no lo es: con la entrada por tubería, la primera
+ * interfaz consume por lectura adelantada todas las líneas disponibles, así que la segunda
+ * encuentra EOF, su promesa nunca resuelve, el event loop queda vacío y Node **sale con
+ * código 0 sin hacer nada** — un fallo silencioso que parece que el programa simplemente
+ * no hizo nada.
+ */
+let rl: readline.Interface | null = null;
+
+function getRl(): readline.Interface {
+  if (rl) return rl;
+  rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  // El eco de readline queda apagado SIEMPRE, no condicionado a una bandera.
+  //
+  // Un silencio condicional pierde una carrera real: con la entrada por tubería, readline
+  // recibe las dos líneas en un mismo chunk y hace eco de ambas mientras se procesa la
+  // primera pregunta, o sea antes de que la bandera se active — y la clave termina impresa.
+  // Apagado del todo no hay carrera posible, y lo que sí debe verse se imprime a mano.
+  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = () => {};
+  return rl;
+}
+
+/**
+ * Las líneas se consumen por el iterador asíncrono de la interfaz, no con `rl.question`.
+ *
+ * `question` solo entrega la línea si ya estaba esperando cuando llega, así que con la entrada
+ * por tubería la segunda línea puede llegar antes de que se registre la segunda pregunta y
+ * readline la descarta. El iterador las encola y las entrega en orden, sin importar el momento
+ * en que lleguen, así que funciona igual con un humano escribiendo o con un archivo redirigido
+ * —lo que además permite probar esto sin teclear nada.
+ */
+let lines: AsyncIterator<string> | null = null;
+
+async function ask(question: string, hidden: boolean): Promise<string> {
+  const iface = getRl();
+  lines ??= iface[Symbol.asyncIterator]();
+
   process.stdout.write(question);
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  if (hidden) {
-    // Silencia el eco por completo: la pregunta ya se imprimió arriba a mano.
-    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = () => {};
-  }
-  return new Promise(resolve => {
-    rl.question('', answer => {
-      rl.close();
-      if (hidden) process.stdout.write('\n');
-      resolve(answer.trim());
-    });
-  });
+
+  const { value, done } = await lines.next();
+
+  // Sin esto, la entrada cerrada dejaría la promesa colgada y el proceso terminaría con
+  // código 0 sin haber hecho nada: un fallo que parece que el programa no se ejecutó.
+  if (done) throw new Error(`No se recibió respuesta a "${question.trim()}" (entrada cerrada).`);
+
+  const answer = String(value).trim();
+  // El eco lo hacemos nosotros, y solo para lo que no es secreto.
+  process.stdout.write(hidden ? '\n' : `${answer}\n`);
+  return answer;
+}
+
+/** Hay que cerrarla o el proceso no termina: readline mantiene vivo el event loop. */
+function closeRl() {
+  rl?.close();
+  rl = null;
+  lines = null;
 }
 
 // ─── Límite de frecuencia ────────────────────────────────────────────────────────────
@@ -317,6 +361,8 @@ async function main() {
     process.exit(1);
   }
 
+  closeRl();
+
   console.log(`\nConectando con ${SCRAPERS[bank].name}…`);
   console.log('Si el banco pide clave dinámica, apruébala en tu app cuando aparezca.\n');
 
@@ -369,6 +415,7 @@ async function main() {
 }
 
 main().catch(e => {
+  closeRl();
   // Sin `secrets` en alcance acá, así que se redacta lo genérico y nada más.
   console.error('Error fatal:', redact(e instanceof Error ? e.message : String(e), []));
   process.exit(1);
