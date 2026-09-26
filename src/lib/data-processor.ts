@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { startOfDay, endOfDay, format, parseISO, startOfWeek, addDays, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { getNetworkMap, resolveNetwork } from '@/lib/network-locations';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,11 +47,6 @@ async function fetchAllMetrics(startIso: string, endIso: string, deviceIds: stri
   return all;
 }
 
-// Networks that count as office time. 'GeCo' is the former workplace (last seen
-// 2026-08-19) and is kept so historical days still resolve; 'IF-Comunidad' is the
-// current one. Both map to the same `office` category — the schema has four fixed
-// location buckets — but they display under their own names.
-const OFFICE_SSIDS = new Set(['GeCo', 'IF-Comunidad']);
 
 // Process name (as the tracker reports it) → title shown in the dashboard.
 // Riot's launcher processes — LeagueClientUx, Riot Client — are deliberately absent:
@@ -63,14 +59,6 @@ const GAME_TITLES: Record<string, string> = {
   'Genshin Impact': 'Genshin Impact',
 };
 
-const formatWifiName = (ssid: string | undefined): string => {
-  if (!ssid || ssid === 'Sin SSID' || ssid === 'Desconocido' || ssid === 'Ethernet' || ssid === 'SIN_SSID') return 'Desconocido';
-  if (ssid === 'IF-Comunidad') return 'Diio';
-  if (ssid === 'GeCo') return 'Oficina';
-  if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'Casa';
-  if (ssid === 'eduroam' || ssid === 'Eduroam') return 'Universidad';
-  return 'Desconocido';
-};
 
 const cleanBookTitle = (title: string | undefined): string => {
   if (!title) return 'Desconocido';
@@ -221,10 +209,16 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   const endIso = endUtc.toISOString();
 
   // Fetch raw metrics and sleep in parallel
-  const [allMetrics, { data: sleepRows }] = await Promise.all([
+  const [allMetrics, { data: sleepRows }, networkMap] = await Promise.all([
     fetchAllMetrics(startIso, endIso, TRACKED_DEVICE_IDS),
     supabase.from('health_sleep_sessions').select('start_time, end_time').eq('date', resolvedDateStr),
+    getNetworkMap(),
   ]);
+
+  // Display name for a network. Falls back to 'Desconocido' for anything unassigned,
+  // which is also what the location breakdown counts as Fuera.
+  const wifiLabel = (ssid?: string, gatewayMac?: string): string =>
+    resolveNetwork(networkMap, { wifi_ssid: ssid, gateway_mac: gatewayMac })?.label ?? 'Desconocido';
   const sleepHourly = computeSleepHourlyMinutes(sleepRows || [], resolvedDateStr);
 
   // For past dates with no raw metrics: fall back to daily_summary (raw data was deleted after summarization)
@@ -280,16 +274,19 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
     }
   };
 
-  const getLocationType = (wifi: string | undefined, deviceId?: string, appName?: string): 'office' | 'home' | 'outside' | 'university' => {
-    const ssid = wifi ? wifi.trim() : '';
-    if (deviceId === 'PC Escritorio') {
-        if (OFFICE_SSIDS.has(ssid)) return 'office';
-        if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
-        return 'home';
-    }
-    if (OFFICE_SSIDS.has(ssid)) return 'office';
-    if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'home';
-    if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
+  // Assignments come from the network_locations table, editable at /admin.
+  const getLocationType = (
+    wifi: string | undefined,
+    deviceId?: string,
+    gatewayMac?: string,
+  ): 'office' | 'home' | 'outside' | 'university' => {
+    const match = resolveNetwork(networkMap, { wifi_ssid: wifi?.trim(), gateway_mac: gatewayMac });
+    if (match) return match.category;
+
+    // Retired desktop: it had no wifi adapter, so an unmatched network there means home
+    // rather than "somewhere else". Kept as a device rule because it is not a network.
+    if (deviceId === 'PC Escritorio') return 'home';
+
     return 'outside';
   };
 
@@ -318,7 +315,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
       const row = pcData[i];
       let deviceName = row.device_id === 'windows-pc' ? 'Lenovo Yoga 7 Slim' : row.device_id;
       if (row.metadata?.battery_level !== undefined) {
-        lastPcStatus = { battery: row.metadata.battery_level, wifi: formatWifiName(row.metadata.wifi_ssid), lastSeen: row.created_at, isCharging: row.metadata.is_charging || false };
+        lastPcStatus = { battery: row.metadata.battery_level, wifi: wifiLabel(row.metadata.wifi_ssid, row.metadata.gateway_mac), lastSeen: row.created_at, isCharging: row.metadata.is_charging || false };
       }
       const priority = deviceName === 'PC Escritorio' ? 3 : 2;
 
@@ -345,14 +342,14 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
           allIntervals.push({ start: sT, end: sT + (totalSeconds * 1000) });
         }
         const wifi = row.metadata?.wifi_ssid;
-        const loc = getLocationType(wifi, deviceName, undefined);
+        const loc = getLocationType(wifi, deviceName, row.metadata?.gateway_mac);
         const activeMin = totalSeconds / 60;
         if (loc === 'office') { rawOfficeMinutes += activeMin; locBreakdown.pc.office += activeMin; }
         else if (loc === 'home') { rawHomeMinutes += activeMin; locBreakdown.pc.home += activeMin; }
         else if (loc === 'university') { rawUniversityMinutes += activeMin; locBreakdown.pc.university += activeMin; }
         else { rawOutsideMinutes += activeMin; locBreakdown.pc.outside += activeMin; }
         if (details.length > 0) {
-          unifiedEvents.push({ id: row.id, time: row.created_at, device: deviceName + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : loc === 'university' ? ' 🎓' : ''), detail: details.join(', '), duration: '1m', type: 'pc', battery: row.metadata?.battery_level, wifi: formatWifiName(wifi), locationType: loc });
+          unifiedEvents.push({ id: row.id, time: row.created_at, device: deviceName + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : loc === 'university' ? ' 🎓' : ''), detail: details.join(', '), duration: '1m', type: 'pc', battery: row.metadata?.battery_level, wifi: wifiLabel(wifi, row.metadata?.gateway_mac), locationType: loc });
         }
       } else {
         if (IGNORED_APPS.includes(row.metadata?.process_name)) continue;
@@ -364,7 +361,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
         const sT = new Date(row.created_at).getTime();
         allIntervals.push({ start: sT, end: sT + (minutes * 60 * 1000) });
         const wifi = row.metadata?.wifi_ssid;
-        const loc = getLocationType(wifi, deviceName, row.metadata?.process_name);
+        const loc = getLocationType(wifi, deviceName, row.metadata?.gateway_mac);
         if (loc === 'office') { rawOfficeMinutes += minutes; locBreakdown.pc.office += minutes; }
         else if (loc === 'home') { rawHomeMinutes += minutes; locBreakdown.pc.home += minutes; }
         else if (loc === 'university') { rawUniversityMinutes += minutes; locBreakdown.pc.university += minutes; }
@@ -397,7 +394,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   if (mobileData && mobileData.length > 0) {
     for (let i = 0; i < mobileData.length; i++) {
       const currentEvent = mobileData[i];
-      lastMobileStatus = { wifi: formatWifiName(currentEvent.metadata?.wifi_ssid), lastSeen: currentEvent.created_at };
+      lastMobileStatus = { wifi: wifiLabel(currentEvent.metadata?.wifi_ssid), lastSeen: currentEvent.created_at };
       const nextEvent = mobileData[i + 1];
       let durationSec = 0;
       if (nextEvent) {
@@ -428,7 +425,7 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
          allIntervals.push({ start: sT, end: sT + (durationSec * 1000) });
       }
       const wifi = currentEvent.metadata?.wifi_ssid || '';
-      const loc = getLocationType(wifi, 'oppo-5-lite', appName);
+      const loc = getLocationType(wifi, 'oppo-5-lite');
       if (loc === 'office') { rawOfficeMinutes += durationMin; locBreakdown.mobile.office += durationMin; }
       else if (loc === 'home') { rawHomeMinutes += durationMin; locBreakdown.mobile.home += durationMin; }
       else if (loc === 'university') { rawUniversityMinutes += durationMin; locBreakdown.mobile.university += durationMin; }
@@ -462,8 +459,8 @@ export async function getDailyStats(dateStr?: string): Promise<DashboardStats> {
   }
 
   mobileLogBuffer.forEach((data, timeKey) => {
-    const loc = getLocationType(data.wifi, 'oppo-5-lite', data.appName);
-    unifiedEvents.push({ id: new Date(timeKey).getTime(), time: timeKey, device: 'Oppo 5 Lite' + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : loc === 'university' ? ' 🎓' : ''), detail: data.details.join(', '), duration: formatDurationSec(data.totalSec), type: 'mobile', wifi: formatWifiName(data.wifi), locationType: loc });
+    const loc = getLocationType(data.wifi, 'oppo-5-lite');
+    unifiedEvents.push({ id: new Date(timeKey).getTime(), time: timeKey, device: 'Oppo 5 Lite' + (loc === 'office' ? ' 🏢' : loc === 'home' ? ' 🏠' : loc === 'university' ? ' 🎓' : ''), detail: data.details.join(', '), duration: formatDurationSec(data.totalSec), type: 'mobile', wifi: wifiLabel(data.wifi), locationType: loc });
   });
 
   const timelineData = new Map<string, { pc: number, mobile: number }>();

@@ -82,6 +82,7 @@ Devices
 | `/` | `src/app/page.tsx` | Server | Main dashboard. Accepts `?date=yyyy-MM-dd` for historical day view |
 | `/history` | `src/app/history/page.tsx` | Server | History view. Accepts `?period=weekly\|monthly\|yearly&date=yyyy-MM-dd` |
 | `/test-db` | `src/app/test-db/page.tsx` | Server | Debug page: shows env var status + last 5 raw metrics records |
+| `/admin` | `src/app/admin/page.tsx` | Server | Assign networks to locations. Password-gated (`ADMIN_SECRET`, same as `/diet`) — the whole page, not just editing. Not linked from anywhere; reached by URL |
 | `/api/track/wearable` | `src/app/api/track/wearable/route.ts` | API | POST endpoint for Xiaomi Band data ingestion |
 | `/api/summarize` | `src/app/api/summarize/route.ts` | API | POST endpoint that triggers the `summarize-daily` Edge Function. Called internally by the history page. |
 
@@ -160,37 +161,34 @@ Exports three functions:
 - `simultaneousMinutes` = (totalPcMs + totalMobileMs) − exactDedupMs
 
 ### Location Detection
-Based on `metadata.wifi_ssid` on each event. There are only **four** location categories
-(`office`, `home`, `outside`, `university`) because `daily_summary` has one column each —
-adding a fifth means a migration plus changes to the rollups and charts.
 
-| SSID | Category | Shown as |
+Assignments live in the **`network_locations`** table and are edited at `/admin` — they
+are no longer hardcoded. Read through `getNetworkMap()` / `resolveNetwork()` in
+`src/lib/network-locations.ts`, with a mirrored copy in the Edge Function (Deno cannot
+import from `src/lib`).
+
+Two identifier kinds, because devices report differently:
+
+| kind | Who sends it | Why |
 |---|---|---|
-| `IF-Comunidad` | `office` | **Diio** — current workplace |
-| `GeCo` | `office` | **Oficina** — former workplace, last seen 2026-08-19 |
-| contains `Depto 402`, or `Ethernet/Off` | `home` | Casa |
-| `eduroam` | `university` | Universidad |
-| anything else | `outside` | Fuera |
+| `ssid` | Zenbook, phone | `metadata.wifi_ssid` |
+| `gateway_mac` | MacBook | macOS 14.4+ hides the SSID from unprivileged processes |
 
-`GeCo` is kept because 9051 raw rows between February and August depend on it; that
-network no longer exists for the user, so the rule can never match new data.
+**Gateway MAC wins over SSID.** The Mac sends both — a MAC it read directly and an SSID
+its local `NETWORK_MAP` translated — and the MAC is the raw fact. That makes the Mac's
+`.env.local` mapping redundant: assignments can be managed entirely from `/admin`.
 
-Office SSIDs live in the `OFFICE_SSIDS` set — once in `data-processor.ts`, mirrored once
-in the Edge Function. Adding a workplace means editing those two sets. The *display*
-names are separate, in `formatWifiName` (Next.js only), since two offices share one
-category but should not share a label.
+There are only **four** categories (`office`, `home`, `outside`, `university`) because
+`daily_summary` has one column each; a fifth needs a migration plus rollup and chart
+changes. `label` is free text, so two networks can both be `home` under different names.
 
-> **Known limitation — `Ethernet/Off` is ambiguous.** A wired connection carries no SSID,
-> so the Zenbook cannot distinguish one location from another; it is assumed to be Home,
-> which holds because the Zenbook lives at home.
->
-> **The MacBook (`device_id = 'MacBook'`) identifies networks by gateway MAC instead.**
-> macOS 14.4+ redacts the SSID for processes without Location Services, so the Mac
-> tracker reads the default gateway's MAC (no permission needed) and `NETWORK_MAP` in its
-> `.env.local` translates known routers into the SSIDs above
-> (`<home-mac>=Depto 402;<office-mac>=IF-Comunidad`). Unknown routers report
-> `Desconocido` → Fuera. This also covers a wired connection at the office. The raw MAC
-> is kept in `metadata.gateway_mac`, with `metadata.network_source = 'gateway_mac'`.
+An unassigned network resolves to `outside`. One device rule survives in code: the
+retired `PC Escritorio` had no wifi adapter, so an unmatched network there means `home`.
+
+> **Changing an assignment does not rewrite history.** `daily_summary` stores minutes per
+> category, not the network that produced them, so past days keep their split. It affects
+> days still holding raw metrics, and everything computed from then on. Raw metrics are
+> intact since February, so a recalculation is possible if ever wanted.
 
 ### Game Detection
 Hardcoded in `data-processor.ts`:

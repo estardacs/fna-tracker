@@ -32,9 +32,50 @@ const cleanBookTitle = (title: string | undefined): string => {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 };
 
-// Mirrors OFFICE_SSIDS in src/lib/data-processor.ts — keep both in sync.
-// 'GeCo' is the former workplace (through 2026-08-19); 'IF-Comunidad' is the current one.
-const OFFICE_SSIDS = new Set(['GeCo', 'IF-Comunidad']);
+// Network → location assignments now live in the network_locations table, editable at
+// /admin. Mirrors src/lib/network-locations.ts — this runs on Deno and cannot import it.
+type NetworkAssignment = { category: 'home' | 'office' | 'university' | 'outside'; label: string };
+type NetworkMap = { bySsid: Map<string, NetworkAssignment>; byGateway: Map<string, NetworkAssignment> };
+
+// Used only if the table cannot be read: a transient failure should degrade the location
+// breakdown, not silently reclassify every day as Fuera.
+function fallbackNetworkMap(): NetworkMap {
+  const home = { category: 'home' as const, label: 'Casa' };
+  return {
+    bySsid: new Map<string, NetworkAssignment>([
+      ['Depto 402', home], ['Depto 402 2', home], ['Ethernet/Off', home],
+      ['GeCo', { category: 'office', label: 'Oficina' }],
+      ['IF-Comunidad', { category: 'office', label: 'Diio' }],
+      ['eduroam', { category: 'university', label: 'Universidad' }],
+      ['Eduroam', { category: 'university', label: 'Universidad' }],
+    ]),
+    byGateway: new Map<string, NetworkAssignment>([['2c:96:82:95:97:90', home]]),
+  };
+}
+
+async function loadNetworkMap(supabase: any): Promise<NetworkMap> {
+  const { data, error } = await supabase.from('network_locations').select('kind, value, category, label');
+  if (error || !data) {
+    console.warn('[Summarizer] could not read network_locations, using fallback:', error?.message);
+    return fallbackNetworkMap();
+  }
+  const map: NetworkMap = { bySsid: new Map(), byGateway: new Map() };
+  for (const row of data as any[]) {
+    const assignment = { category: row.category, label: row.label };
+    if (row.kind === 'gateway_mac') map.byGateway.set(String(row.value).toLowerCase(), assignment);
+    else map.bySsid.set(row.value, assignment);
+  }
+  return map;
+}
+
+/** Gateway MAC wins over SSID: the MacBook sends both, and the MAC is the raw fact. */
+function resolveNetwork(map: NetworkMap, metadata: any): NetworkAssignment | null {
+  const mac = metadata?.gateway_mac ? String(metadata.gateway_mac).trim().toLowerCase() : '';
+  if (mac && map.byGateway.has(mac)) return map.byGateway.get(mac)!;
+  const ssid = metadata?.wifi_ssid ? String(metadata.wifi_ssid).trim() : '';
+  if (ssid && map.bySsid.has(ssid)) return map.bySsid.get(ssid)!;
+  return null;
+}
 
 // Mirrors GAME_TITLES in src/lib/data-processor.ts — keep both in sync.
 // Riot's launcher processes (LeagueClientUx, Riot Client) are deliberately absent:
@@ -124,7 +165,10 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
   console.log(`[Summarizer] Query Range (UTC): ${startIso} to ${endIso}`);
 
   // Fetch all data for the day, paginated past the 1000-row cap
-  const metrics = await fetchAllMetrics(supabase, startIso, endIso);
+  const [metrics, networkMap] = await Promise.all([
+    fetchAllMetrics(supabase, startIso, endIso),
+    loadNetworkMap(supabase),
+  ]);
 
   // Mirrors PC_DEVICE_IDS in src/lib/data-processor.ts — keep both in sync. The first
   // three are retired machines, kept so historical days still resolve.
@@ -155,17 +199,18 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     }
   };
   
-  const getLocationType = (wifi: string | undefined, deviceId?: string): 'office' | 'home' | 'outside' | 'university' => {
-    const ssid = wifi ? wifi.trim() : '';
-    if (deviceId === 'PC Escritorio') {
-      if (OFFICE_SSIDS.has(ssid)) return 'office';
-      if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
-      return 'home';
-    }
-    if (!ssid) return 'outside';
-    if (OFFICE_SSIDS.has(ssid)) return 'office';
-    if (ssid.includes('Depto 402') || ssid === 'Ethernet/Off') return 'home';
-    if (ssid === 'eduroam' || ssid === 'Eduroam') return 'university';
+  const getLocationType = (
+    wifi: string | undefined,
+    deviceId?: string,
+    gatewayMac?: string,
+  ): 'office' | 'home' | 'outside' | 'university' => {
+    const match = resolveNetwork(networkMap, { wifi_ssid: wifi, gateway_mac: gatewayMac });
+    if (match) return match.category;
+
+    // Retired desktop: no wifi adapter, so an unmatched network there means home rather
+    // than "somewhere else". A device rule, not a network one.
+    if (deviceId === 'PC Escritorio') return 'home';
+
     return 'outside';
   };
 
@@ -205,7 +250,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
     }
 
     const wifi = row.metadata?.wifi_ssid;
-    const loc = getLocationType(wifi, row.device_id);
+    const loc = getLocationType(wifi, row.device_id, row.metadata?.gateway_mac);
     const activeMin = totalSecondsInBatch / 60;
     if (loc === 'office') { rawOfficeMinutes += activeMin; locBreakdown.pc.office += activeMin; }
     else if (loc === 'home') { rawHomeMinutes += activeMin; locBreakdown.pc.home += activeMin; }
