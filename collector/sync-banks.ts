@@ -227,6 +227,32 @@ function recordRun(bank: BankId) {
   writeFileSync(LAST_RUN, JSON.stringify({ ...readLastRuns(), [bank]: new Date().toISOString() }, null, 2));
 }
 
+/**
+ * Deshace el registro de la corrida.
+ *
+ * `recordRun` se llama ANTES del scrape, a propósito: si el proceso muere a mitad de camino,
+ * el registro ya está escrito y un reintento inmediato queda frenado. Pero eso castiga los
+ * fallos que nunca tocaron el banco —sobre todo "no se encontró Chrome"—, dejando 30 minutos
+ * de espera por cero intentos de login. Lo que el límite protege son los logins fallidos, y
+ * esos solo existen después de que el navegador arranca.
+ *
+ * Los mensajes que se buscan acá vienen de nuestra propia copia de browser.ts, así que
+ * comparar texto es aceptable: no dependen de lo que devuelva el banco.
+ */
+const PRE_BANK_FAILURES = [
+  'No se encontró Chrome',
+  'Failed to launch the browser',
+  'requiere modo headful',
+];
+
+function unrecordRun(bank: BankId, error: string) {
+  if (!PRE_BANK_FAILURES.some(f => error.includes(f))) return;
+  const runs = readLastRuns();
+  delete runs[bank];
+  writeFileSync(LAST_RUN, JSON.stringify(runs, null, 2));
+  console.log('  (el navegador nunca arrancó, así que esto no cuenta para el límite de 30 min)');
+}
+
 // ─── Mapeo al contrato de la app ─────────────────────────────────────────────────────
 //
 // Cada colector adapta su fuente al payload de src/lib/bank-types.ts. Lo que NO se hace acá
@@ -400,14 +426,18 @@ async function main() {
     });
   } catch (e) {
     // El error del scraper puede envolver el objeto de opciones, que contiene la clave.
-    console.error(`\nEl scraper falló: ${redact(e instanceof Error ? e.message : String(e), secrets)}`);
+    const msg = redact(e instanceof Error ? e.message : String(e), secrets);
+    console.error(`\nEl scraper falló: ${msg}`);
+    unrecordRun(bank, msg);
     process.exit(1);
   }
 
   const payload = buildPayload(bank, result, win);
 
   if (!result.success) {
-    console.error(`\nEl scrape no tuvo éxito: ${redact(result.error ?? 'sin detalle', secrets)}`);
+    const failure = redact(result.error ?? 'sin detalle', secrets);
+    console.error(`\nEl scrape no tuvo éxito: ${failure}`);
+    unrecordRun(bank, failure);
     if (!confirm) process.exit(1);
     // Con --confirm se envía igual: registrar la corrida fallida es justamente lo que permite
     // que /gastos muestre "falló hace 2 horas" en vez de quedarse callado.
