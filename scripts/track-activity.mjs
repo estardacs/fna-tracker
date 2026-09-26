@@ -51,6 +51,16 @@ for (const candidate of [join(process.cwd(), '.env.local'), join(here, '.env.loc
 const IS_MAC = process.platform === 'darwin';
 const DEVICE_ID = process.env.DEVICE_ID || (IS_MAC ? 'MacBook' : 'Zenbook');
 const IDLE_THRESHOLD_MS = 3 * 60 * 1000;
+
+// A peak above this counts as "something is playing". Silence reads as 0; real playback
+// measured between 0.0003 and 0.005, so the threshold sits an order of magnitude below
+// the quietest observed signal rather than at an arbitrary round number.
+const AUDIO_PEAK_THRESHOLD = 0.0001;
+
+// Audio alone would keep counting all night if music is left running, and this machine's
+// display never sleeps, so there is no second signal to stop it. Four hours outlasts any
+// film while still capping an unattended session.
+const AUDIO_MAX_IDLE_MS = 4 * 60 * 60 * 1000;
 const DRY_RUN = process.env.TRACKER_DRY_RUN === '1';
 const MAC_SAMPLER_SOURCE = join(here, 'mac-sampler.swift');
 const MAC_SAMPLER_BINARY = join(here, '.bin', 'mac-sampler');
@@ -114,8 +124,61 @@ public class Win32 {
     [DllImport("user32.dll", SetLastError=true)]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 }
+
+// Reads the peak level of the default output device. Playing a video keeps producing
+// peaks even when nobody touches the keyboard, which is the only way to tell "watching
+// a film" apart from "walked away" on a machine whose display never sleeps.
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+public class MMDeviceEnumeratorComObject { }
+
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IMMDeviceEnumerator {
+    int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice device);
+}
+
+[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IMMDevice {
+    int Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object iface);
+}
+
+[ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IAudioMeterInformation {
+    int GetPeakValue(out float peak);
+}
+
+public static class AudioWatcher {
+    static IAudioMeterInformation _meter;
+    static readonly Guid IID_Meter = new Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064");
+
+    public static bool Start() {
+        try {
+            IMMDeviceEnumerator en = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+            IMMDevice dev;
+            if (en.GetDefaultAudioEndpoint(0, 0, out dev) != 0) return false;
+            object o; Guid iid = IID_Meter;
+            if (dev.Activate(ref iid, 23, IntPtr.Zero, out o) != 0) return false;
+            _meter = (IAudioMeterInformation)o;
+            return true;
+        } catch { return false; }
+    }
+
+    // Returns -1 when the meter is unavailable, so the caller can fall back to idle only
+    // instead of silently counting nothing.
+    public static float Peak() {
+        try {
+            if (_meter == null) return -1f;
+            float p;
+            if (_meter.GetPeakValue(out p) != 0) return -1f;
+            return p;
+        } catch { _meter = null; return -1f; }
+    }
+}
 '@
 Add-Type -TypeDefinition $code -Language CSharp
+
+[void][AudioWatcher]::Start()
+$lastAudioRetry = 0
 
 $acc = @{}
 $tick = 0
@@ -129,7 +192,18 @@ while ($true) {
     [void][Win32]::GetLastInputInfo([ref]$lii)
     $idleMs = [Environment]::TickCount - $lii.dwTime
 
-    if ($idleMs -lt ${IDLE_THRESHOLD_MS}) {
+    $peak = [AudioWatcher]::Peak()
+    # A negative peak means the meter died, usually because the default output device
+    # changed (headphones plugged in). Rebuild it, but no more than once every 30s.
+    if ($peak -lt 0 -and ($tick - $lastAudioRetry) -ge 30) {
+        [void][AudioWatcher]::Start()
+        $lastAudioRetry = $tick
+    }
+
+    $playing = $peak -gt ${AUDIO_PEAK_THRESHOLD}
+    $active = ($idleMs -lt ${IDLE_THRESHOLD_MS}) -or ($playing -and $idleMs -lt ${AUDIO_MAX_IDLE_MS})
+
+    if ($active) {
         $hwnd = [Win32]::GetForegroundWindow()
         $procId = 0
         [void][Win32]::GetWindowThreadProcessId($hwnd, [ref]$procId)

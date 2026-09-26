@@ -281,9 +281,28 @@ metadata: { breakdown: {processName: seconds}, wifi_ssid, battery_level, is_char
 ```
 
 A single long-lived `powershell.exe` does per-second sampling and prints one JSON line per
-minute — spawning it 60 times a minute would recompile the Win32 interop every time. Idle
-seconds (>3 min without input) are dropped rather than attributed to the focused window.
+minute — spawning it 60 times a minute would recompile the Win32 interop every time.
 Set `DEVICE_ID` to override the device name; it defaults to `Zenbook`.
+
+**A second counts when the session is active, which means either recent input (<3 min) or
+audio playing.** Input alone was the original rule and it silently dropped films and long
+videos: `GetLastInputInfo` only sees keyboard and mouse, so a two-hour movie registered
+its first three minutes and nothing else.
+
+The Mac's rule — count while the display is on — does not transfer, because this machine's
+power plan never sleeps the display (`VIDEOIDLE = 0` on both AC and battery), so it would
+count all night. Audio is the available substitute: `IAudioMeterInformation.GetPeakValue`
+on the default output device keeps reporting peaks while anything plays. Measured silence
+reads 0 and real playback 0.0003–0.05, so `AUDIO_PEAK_THRESHOLD` sits at 0.0001.
+
+Audio alone would run forever if music is left playing, and there is no display-off signal
+to stop it, so `AUDIO_MAX_IDLE_MS` caps that branch at 4 hours — longer than any film,
+short enough to bound an unattended machine. The meter is rebuilt (at most every 30s) when
+it returns -1, which happens when the default output device changes.
+
+> Consequence: the Zenbook and the MacBook measure differently. The Mac counts whenever
+> the display is on, the Zenbook needs input or audio. Silent reading on the Mac counts;
+> on the Zenbook it stops after 3 minutes.
 
 On macOS (`device_id = 'MacBook'`) the sampler is `scripts/mac-sampler.swift`, run as a
 LaunchAgent by `scripts/install-mac-tracker.sh`. It has **no idle cutoff**: a second
