@@ -1,7 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { unstable_noStore as noStore } from 'next/cache';
 import { toZonedTime } from 'date-fns-tz';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const TIMEZONE = 'America/Santiago';
 
@@ -183,6 +184,42 @@ export async function getDietDataForRange(startIso: string, endIso: string): Pro
     entry.topFoods = entry.topFoods.slice(0, 4);
   }
   return map;
+}
+
+export interface DietWeekDay {
+  date: string;
+  dayName: string;
+  calories: number;
+  proteinG: number;
+}
+
+/** Last 7 days (today plus the six before it), oldest first, for the grid at the foot of
+ *  /diet. Anchored to today rather than to the date being viewed, matching how the home
+ *  page's WeeklyGrid behaves.
+ *
+ *  Counts every logged row regardless of `status`: a planned day shows its plan. That is
+ *  deliberate, and it also keeps this reading identical to /history, which shares
+ *  getDietDataForRange. */
+export async function getDietWeekStats(): Promise<DietWeekDay[]> {
+  noStore();
+
+  const zonedNow = toZonedTime(new Date(), TIMEZONE);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = subDays(zonedNow, 6 - i);
+    return { date: format(d, 'yyyy-MM-dd'), dayName: format(d, 'EEEE', { locale: es }) };
+  });
+
+  const byDate = await getDietDataForRange(days[0].date, days[days.length - 1].date);
+
+  return days.map(({ date, dayName }) => {
+    const entry = byDate.get(date);
+    return {
+      date,
+      dayName,
+      calories: Math.round(entry?.calories ?? 0),
+      proteinG: Math.round(entry?.proteinG ?? 0),
+    };
+  });
 }
 
 /** @deprecated Use getDietDataForRange */

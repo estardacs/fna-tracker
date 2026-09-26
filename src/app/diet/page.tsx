@@ -1,8 +1,9 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
-import { getDietDayStats } from '@/lib/diet-processor';
+import { getDietDayStats, getDietWeekStats, getGoal } from '@/lib/diet-processor';
 import DietContent from '@/components/diet/DietContent';
+import DietWeeklyGrid from '@/components/diet/DietWeeklyGrid';
 import DietDateNavigator from '@/components/diet/DietDateNavigator';
 import AuthButton from '@/components/diet/AuthButton';
 import { format } from 'date-fns';
@@ -60,13 +61,41 @@ function DietSkeleton() {
           </div>
         </div>
       ))}
+
+      {/* Weekly grid — reserves its height so the page does not shift when data lands */}
+      <div className="pt-4">
+        <div className="h-3 w-32 bg-gray-800/60 rounded-full animate-pulse mb-4" />
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          {[...Array(7)].map((_, i) => (
+            <div
+              key={i}
+              className="h-[104px] bg-gray-900/40 border border-gray-800/50 rounded-xl animate-pulse"
+              style={{ animationDelay: `${i * 50}ms` }}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 async function DietData({ date, isOwner }: { date?: string; isOwner: boolean }) {
-  const data = await getDietDayStats(date);
-  return <DietContent data={data} isOwner={isOwner} />;
+  // In parallel: the day being viewed, the last 7 days for the grid, and the goal used to
+  // colour it. Sequential awaits would add the week query's latency to every page load.
+  const [data, week, goal] = await Promise.all([
+    getDietDayStats(date),
+    getDietWeekStats(),
+    getGoal(),
+  ]);
+
+  return (
+    <>
+      <DietContent data={data} isOwner={isOwner} />
+      <div className="mt-10">
+        <DietWeeklyGrid days={week} goal={goal.calories} />
+      </div>
+    </>
+  );
 }
 
 export default async function DietPage({
