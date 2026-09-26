@@ -1,0 +1,6 @@
+# El colector bancario nunca se sube al build. Corre en la máquina del usuario y arrastra
+# puppeteer-core, que no tiene nada que hacer en un contenedor serverless.
+collector/
+
+# Scripts de mantención y trackers locales: tampoco los necesita el build.
+scripts/

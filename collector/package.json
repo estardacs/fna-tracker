@@ -1,0 +1,18 @@
+{
+  "name": "fna-collector",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Colector bancario local. Deliberadamente fuera del package.json de la app: puppeteer-core nunca debe entrar al build de Vercel.",
+  "scripts": {
+    "sync": "tsx sync-banks.ts"
+  },
+  "dependencies": {
+    "puppeteer-core": "24.43.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.33",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

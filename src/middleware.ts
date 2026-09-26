@@ -12,6 +12,10 @@ const PUBLIC_WRITE_PATHS = [
   // MCP clients cannot present the admin cookie; /api/mcp authenticates itself with a
   // bearer token. Exempt from this check, not from authentication.
   '/api/mcp',
+  // El colector bancario corre en la máquina del usuario y tampoco puede presentar la
+  // cookie; /api/track/bank se autentica con BANK_INGEST_TOKEN. Exento de este chequeo, no
+  // de autenticación. Esa ruta no expone GET.
+  '/api/track/bank',
 ];
 
 export function middleware(req: NextRequest) {

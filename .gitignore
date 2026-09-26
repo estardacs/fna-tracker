@@ -51,3 +51,14 @@ supabase/.temp/
 tracker.log
 launcher.log
 scripts/.bin/
+
+# colector bancario
+collector/node_modules/
+collector/debug/
+collector/*.log
+collector/.last-run.json
+
+# Screenshots de sesiones bancarias: contienen saldos y el nombre del titular renderizados
+# como píxeles, que ningún escáner de secretos detecta. Nunca versionar.
+screenshots/
+**/screenshots/

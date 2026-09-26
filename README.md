@@ -86,3 +86,18 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUMMARIZER_SECRET
 ANTHROPIC_API_KEY
 ```
+
+## Gastos
+
+Seguimiento de cuentas bancarias en `/gastos`, password-gated. Los datos se traen con un
+colector que corre **en tu maquina**, no en la nube: el banco pide clave dinamica y necesita un
+Chrome con ventana, asi que hay un humano en cada corrida.
+
+```bash
+npm run sync-banks -- --bank=bchile            # dry run
+npm run sync-banks -- --bank=bchile --confirm
+```
+
+Las credenciales se piden en cada ejecucion y no se guardan en ningun lado. Las cuatro tablas
+`bank_*` son las unicas del proyecto sin acceso para la anon key: se leen solo con
+`service_role`, desde el servidor. Ver la seccion "Gastos" de `CLAUDE.md`.

@@ -1,0 +1,40 @@
+{
+  "bank": "bchile",
+  "scrapedAt": "2026-09-26T12:00:00.000Z",
+  "success": true,
+  "accounts": [
+    {
+      "kind": "checking",
+      "label": "Cuenta Corriente ****2706",
+      "mask": "****2706",
+      "currency": "CLP",
+      "balance": 1234567,
+      "window": { "from": "2026-09-20", "to": "2026-09-26", "complete": true },
+      "movements": [
+        { "date": "26-09-2026", "description": "TRANSFERENCIA A JUAN", "amount": -50000, "balance": 1234567, "source": "account" },
+        { "date": "25-09-2026", "description": "CAFE ALTURA  SUC 12", "amount": -3990, "balance": 1284567, "source": "account" },
+        { "date": "25-09-2026", "description": "CAFE ALTURA  SUC 12", "amount": -3990, "balance": 1288557, "source": "account" },
+        { "date": "22-09-2026", "description": "ABONO SUELDO", "amount": 1500000, "balance": 1292547, "source": "account" }
+      ]
+    },
+    {
+      "kind": "credit_card",
+      "label": "Mastercard Black ****5824",
+      "mask": "****5824",
+      "currency": "CLP",
+      "window": { "from": "2026-09-20", "to": "2026-09-26", "complete": true },
+      "unbilledAuthoritative": true,
+      "credit": {
+        "nationalUsed": 340000,
+        "nationalAvailable": 660000,
+        "nationalTotal": 1000000,
+        "nextDueDate": "05-10-2026",
+        "periodExpenses": 340000
+      },
+      "movements": [
+        { "date": "24-09-2026", "description": "RESTAURANT XYZ", "amount": -28500, "balance": 0, "source": "credit_card_unbilled", "owner": "titular", "card": "****5824" },
+        { "date": "21-09-2026", "description": "NOTEBOOK EN CUOTAS", "amount": -99990, "balance": 0, "source": "credit_card_billed", "owner": "titular", "card": "****5824", "installments": "02/06", "totalAmount": -599940 }
+      ]
+    }
+  ]
+}

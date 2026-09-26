@@ -405,6 +405,106 @@ curl -s -X POST http://localhost:3000/api/mcp \
 
 ---
 
+## Gastos: bancos, y la excepcion de RLS
+
+Tablas: `bank_accounts`, `bank_transactions`, `bank_balance_snapshots`, `bank_sync_runs`
+(migracion `20260926120000`). La vista es `/gastos`, gated completa por la cookie de
+`ADMIN_SECRET` igual que `/admin`.
+
+> **Estas cuatro tablas NO tienen politica `anon_all`, y es a proposito.** Sus GRANTs estan
+> revocados para `anon` y `authenticated`, y la RLS esta activa **sin politicas**. Es la unica
+> excepcion a la convencion del resto del proyecto, porque la anon key viaja dentro del bundle
+> del navegador y con `anon_all` cualquiera que abra devtools leeria cada transaccion.
+>
+> El candado primario es el `REVOKE`, no la RLS. Con RLS sola, PostgREST devolveria `200 []`
+> --- indistinguible de "la tabla esta vacia", imposible de verificar, y a una politica
+> accidental de distancia de filtrarse. Con el `REVOKE` devuelve `42501 permission denied`.
+>
+> **La trampa:** si copias el patron de `/api/diet/*` e importas `@/lib/supabase` (la anon
+> key) para consultar una tabla bancaria, no obtienes un error sino `[]` --- datos vacios en
+> silencio. Todo acceso pasa por `src/lib/bank-service.ts`, que es el unico modulo que importa
+> `src/lib/supabase-admin.ts` (service_role, con `import 'server-only'` para que un componente
+> cliente que lo importe rompa el build en vez de filtrar la llave).
+
+### El colector corre local, nunca en la nube
+
+`collector/` es un paquete aparte, con su propio `package.json`, lockfile y `node_modules`.
+Esta en `.vercelignore` y en el `exclude` de `tsconfig.json`: `puppeteer-core` no debe entrar
+al build de Vercel, y sin ese `exclude` el `npm run build` type-checkearia el colector y
+fallaria.
+
+```bash
+npm run sync-banks -- --bank=bchile                        # dry run: no envia nada
+npm run sync-banks -- --bank=bchile --confirm
+npm run sync-banks -- --bank=bchile --complete --confirm   # habilita reconciliacion
+```
+
+Pide RUT y clave por stdin en cada ejecucion y **no las guarda en ninguna parte**. No es
+incomodidad gratuita: la clave dinamica ya obliga a que haya un humano presente, asi que
+guardarla no habilitaria nada desatendido, solo crearia un objetivo de robo. El proceso lee de
+`.env.local` **solo** `BANK_INGEST_TOKEN`, `FNA_BASE_URL` y `CHROME_PATH`, nunca el archivo
+completo, para que `SUPABASE_SERVICE_ROLE_KEY` no exista en el entorno de un proceso que
+ejecuta codigo de scraping de terceros.
+
+Scraping en la nube no es una opcion pendiente, es imposible en Supabase: las Edge Functions
+son un sandbox Deno sin binario de Chrome ni forma de lanzar procesos. `pg_cron` + `pg_net`
+solo hacen HTTP. Si algun dia se quiere desatendido, el camino es empaquetar este mismo
+colector a Cloud Run `southamerica-west1` (la unica region que da IP chilena) y aceptar que la
+clave viva en un secret manager. El contrato entre las dos mitades es la forma del payload de
+`src/lib/bank-types.ts`, asi que eso no toca la app.
+
+`collector/vendor/` es una copia revisada de
+[kaihv/open-banking-chile](https://github.com/kaihv/open-banking-chile) al commit
+`085faafd`, con la auditoria de seguridad y la lista de lo eliminado en
+`collector/vendor/UPSTREAM.md`. **No convertirlo en una dependencia de npm:** el paquete
+publicado no corresponde a ese arbol y arrastra `googleapis`.
+
+### Idempotencia: lo que hay que entender antes de tocar `bank-service.ts`
+
+Los bancos no dan id estable, y un movimiento **muta**: pasa de `credit_card_unbilled` a
+`credit_card_billed` y su saldo corriente cambia cuando el banco re-renderiza el historial.
+
+- `dedup_key` = sha256 del subconjunto **estable**: cuenta, fecha, monto, descripcion
+  normalizada, tarjeta, cuotas, titular. **Fuera** quedan `source`, `balance` y `totalAmount`,
+  porque mutan. `owner` va **dentro**: distingue dos cargos identicos de dos tarjetahabientes
+  el mismo dia.
+- `occurrence` es la n-esima aparicion de una tupla identica en el mismo (cuenta, dia). Dos
+  cafes iguales el mismo dia son dos filas legitimas.
+- La normalizacion de la descripcion es minima a proposito. Normalizar de mas fusiona
+  transacciones distintas, que es irrecuperable; un falso split se ve y se corrige.
+- **Dos modos.** Lo no facturado se reemplaza completo en cada corrida (no tiene valor
+  historico y el banco lo entrega como listado integro). Lo asentado va por upsert por clave.
+  Eso resuelve el paso no facturado -> facturado sin ninguna heuristica de emparejamiento.
+- **`window.complete` es el campo mas importante del payload.** La ruta se niega a marcar algo
+  como desaparecido cuando es `false`. Una ventana parcial mas un camino de borrado es como se
+  destruye historia real. El colector lo deja en `false` por default: `--complete` es opt-in.
+- **Nunca se borra una fila bancaria**, solo se marca `missing_since`. Es el unico dato del
+  proyecto que no se puede regenerar: los bancos exponen 60-90 dias y re-scrapear cuesta un
+  desafio de seguridad.
+- Las fechas se parsean en la **ruta**, no en el colector, y **una fecha invalida rechaza el
+  lote completo**: una fecha mal leida envenena el `dedup_key` de forma permanente.
+- El insert y el update van por caminos separados porque el `upsert` de supabase-js se traduce
+  a `DO UPDATE SET <todas las columnas del payload>`, sin forma de excluir ninguna. Con un solo
+  upsert, `first_seen_run` se sobreescribiria en cada corrida.
+
+### Lo que nunca se registra
+
+La clave (el objeto de opciones del scraper la contiene, asi que nada de `console.log(options)`
+--- el colector tiene `redact()`), el RUT (identificador nacional **y** credencial de login), el
+numero completo de tarjeta (las CHECK de `mask` y `card` hacen fallar el insert si el scraper
+regresiona y lo emite), y los screenshots del scraper, que traen saldos y el nombre del
+titular como pixeles. `bank_sync_runs.error` pasa por `sanitizeError()`.
+
+### Frecuencia
+
+El colector se niega a correr un banco cuya ultima corrida fue hace menos de 30 minutos, via
+`collector/.last-run.json` (ignorado por git). Los logins fallidos repetidos son lo que hace
+que un banco bloquee la cuenta, y un selector roto se le parece bastante desde su lado. Nunca
+agregar un cron para esto. **El colector jamas debe ejecutar una accion de escritura en el
+banco** --- sin transferencias, sin pagos, solo lectura.
+
+---
+
 ## Environment Variables
 
 ```
@@ -413,6 +513,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY  # Supabase anon key (safe for browser)
 MCP_TOKEN                      # Bearer token for the /api/mcp server (Claude Desktop / mobile)
 SUMMARIZER_SECRET              # Secret for authenticating calls to summarize-daily Edge Function
                                # Used by: /history page, /api/summarize route, and the Edge Function itself
+BANK_INGEST_TOKEN              # Bearer token del colector bancario (/api/track/bank). Distinto de
+                               # MCP_TOKEN y ADMIN_SECRET a proposito.
+SUPABASE_SERVICE_ROLE_KEY      # Requerida por /gastos: las tablas bank_* solo son legibles con
+                               # service_role. Server-only, nunca NEXT_PUBLIC. Debe estar en Vercel.
 ```
 
 `NEXT_PUBLIC_*` vars are used in both client and server code via `createClient()`. The Edge Function additionally uses `SUPABASE_SERVICE_ROLE_KEY` (server-only, set in Supabase dashboard).

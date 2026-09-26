@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "backfill": "tsx scripts/backfill-summaries.ts",
-    "prune-metrics": "tsx scripts/prune-metrics.ts"
+    "prune-metrics": "tsx scripts/prune-metrics.ts",
+    "sync-banks": "tsx collector/sync-banks.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
