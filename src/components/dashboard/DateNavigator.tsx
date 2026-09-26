@@ -40,7 +40,6 @@ export default function DateNavigator() {
       <button 
         onClick={goToToday}
         className="flex items-center gap-2 px-2 md:px-3 py-1.5 hover:bg-gray-800 rounded-md transition-colors md:min-w-[140px] justify-center cursor-pointer"
-        title="Volver a Hoy"
       >
         <Calendar className="w-3.5 h-3.5 text-blue-400" />
         <span className="text-sm font-medium text-gray-200 capitalize">

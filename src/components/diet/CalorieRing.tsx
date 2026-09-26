@@ -110,7 +110,6 @@ export default function CalorieRing({ consumed, goal, onGoalSave }: CalorieRingP
             <button
               onClick={openEdit}
               className="group/goal flex items-center gap-1 cursor-pointer"
-              title="Cambiar objetivo calórico"
             >
               <span className="font-mono">{goal}</span>
               <Pencil className="w-3 h-3 text-gray-700 [@media(hover:none)]:opacity-100 opacity-0 group-hover/goal:opacity-100 transition-opacity" />

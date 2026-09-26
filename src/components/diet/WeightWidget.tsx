@@ -112,7 +112,6 @@ export default function WeightWidget({ weight, date, isOwner = false }: WeightWi
               onClick={save}
               disabled={saving}
               className="flex items-center justify-center w-10 h-10 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg transition-colors cursor-pointer shrink-0"
-              title="Guardar (Enter)"
             >
               {saving
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />

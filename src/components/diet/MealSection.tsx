@@ -72,7 +72,6 @@ function GramsBadge({ entry, onSaved }: { entry: DietLogEntry; onSaved: () => vo
   return (
     <button
       onClick={open}
-      title="Editar cantidad"
       className="text-xs text-gray-500 font-mono hover:text-gray-200 hover:bg-gray-800 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
     >
       {entry.grams_consumed}g

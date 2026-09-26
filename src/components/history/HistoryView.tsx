@@ -189,7 +189,7 @@ function HistoryCard({ item, period }: { item: HistoryItem, period: PeriodType }
                             <span className="truncate">{item.calories > 0 ? `${item.calories.toFixed(0)} Kcal` : '— Kcal'}</span>
                         </span>
                         {isDayCard && item.calories > 0 ? (
-                            <Link href={`/diet?date=${item.dateKey}`} className="flex items-center gap-1 text-amber-500/70 hover:text-amber-400 transition-colors ml-auto shrink-0" title="Ver dieta completa de este día">
+                            <Link href={`/diet?date=${item.dateKey}`} className="flex items-center gap-1 text-amber-500/70 hover:text-amber-400 transition-colors ml-auto shrink-0">
                                 <UtensilsCrossed className="w-2.5 h-2.5 shrink-0" />
                                 <span>Dieta</span>
                             </Link>
