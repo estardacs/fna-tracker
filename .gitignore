@@ -50,3 +50,4 @@ supabase/.temp/
 # tracker runtime log
 tracker.log
 launcher.log
+scripts/.bin/

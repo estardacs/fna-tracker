@@ -1,5 +1,5 @@
 /**
- * Windows activity tracker.
+ * Windows and macOS activity tracker.
  *
  * Emits one `usage_summary_1min` row per active minute, matching the shape the
  * dashboard already expects from the retired machines:
@@ -18,9 +18,19 @@
  *   4. node scripts/track-activity.mjs   — or use start-tracker.vbs for silent autostart.
  *
  * Override the device name with DEVICE_ID if this is not the Zenbook.
+ *
+ * On macOS the sampler is scripts/mac-sampler.swift, compiled on first run (needs the
+ * Xcode Command Line Tools); install-mac-tracker.sh sets it up as a LaunchAgent. macOS
+ * hides the SSID from unprivileged processes, so the Mac reports its gateway's MAC and
+ * NETWORK_MAP translates known routers into the SSIDs the dashboard already understands:
+ *
+ *   NETWORK_MAP=<home-mac>=Depto 402;<office-mac>=IF-Comunidad
+ *
+ * TRACKER_DRY_RUN=1 logs each row instead of inserting it. On macOS, TRACKER_WINDOW_SECONDS
+ * and TRACKER_IDLE_SECONDS shorten the sampling window and idle cutoff for testing.
  */
 import { createClient } from '@supabase/supabase-js';
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import { createServer } from 'net';
 import { createInterface } from 'readline';
 import { existsSync, appendFileSync, statSync, writeFileSync } from 'fs';
@@ -36,8 +46,19 @@ for (const candidate of [join(process.cwd(), '.env.local'), join(here, '.env.loc
   }
 }
 
-const DEVICE_ID = process.env.DEVICE_ID || 'Zenbook';
+const IS_MAC = process.platform === 'darwin';
+const DEVICE_ID = process.env.DEVICE_ID || (IS_MAC ? 'MacBook' : 'Zenbook');
 const IDLE_THRESHOLD_MS = 3 * 60 * 1000;
+const DRY_RUN = process.env.TRACKER_DRY_RUN === '1';
+const MAC_SAMPLER_SOURCE = join(here, 'mac-sampler.swift');
+const MAC_SAMPLER_BINARY = join(here, '.bin', 'mac-sampler');
+
+// An unlisted router is reported as 'Desconocido', which the dashboard counts as Fuera.
+const NETWORK_MAP = new Map(
+  (process.env.NETWORK_MAP || '').split(';').map(entry => entry.split('='))
+    .filter(pair => pair.length === 2)
+    .map(([mac, ssid]) => [mac.trim().toLowerCase(), ssid.trim()]),
+);
 
 // start-tracker.vbs runs this with no console window, so stdout goes nowhere. Everything
 // is mirrored to tracker.log in the project root, which is the only way to find out why
@@ -59,11 +80,11 @@ function log(message) {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-if (!supabaseUrl || !supabaseKey) {
+if (!DRY_RUN && (!supabaseUrl || !supabaseKey)) {
   log('Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY.');
   process.exit(1);
 }
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = DRY_RUN ? null : createClient(supabaseUrl, supabaseKey);
 
 // Samples the foreground process once a second and prints an aggregate every 60 ticks.
 // Idle seconds are dropped rather than attributed to whatever window happened to be
@@ -144,21 +165,38 @@ while ($true) {
 }
 `;
 
+function networkMetadata(sample) {
+  if (!IS_MAC) return { wifi_ssid: sample.wifi_ssid };
+  const mac = sample.gateway_mac;
+  return {
+    wifi_ssid: (mac && NETWORK_MAP.get(mac)) || 'Desconocido',
+    gateway_mac: mac,
+    network_source: 'gateway_mac',
+  };
+}
+
 async function publish(sample) {
-  const { error } = await supabase.from('metrics').insert([{
+  const network = networkMetadata(sample);
+  const row = {
     device_id: DEVICE_ID,
     metric_type: 'usage_summary_1min',
     value: 1,
     unit: 'minute',
     metadata: {
       breakdown: sample.breakdown,
-      wifi_ssid: sample.wifi_ssid,
+      ...network,
       battery_level: sample.battery_level,
       is_charging: sample.is_charging,
       timestamp: new Date().toISOString(),
     },
-  }]);
+  };
 
+  if (DRY_RUN) {
+    log(`[tracker] dry run ${JSON.stringify(row)}`);
+    return;
+  }
+
+  const { error } = await supabase.from('metrics').insert([row]);
   if (error) {
     log(`[tracker] insert failed: ${error.message}`);
     return;
@@ -167,17 +205,33 @@ async function publish(sample) {
     .sort((a, b) => b[1] - a[1])
     .map(([name, secs]) => `${name} ${secs}s`)
     .join(', ');
-  log(`[tracker] ${new Date().toLocaleTimeString()}  ${apps}  |  ${sample.wifi_ssid}  ${sample.battery_level}%`);
+  log(`[tracker] ${new Date().toLocaleTimeString()}  ${apps}  |  ${network.wifi_ssid}  ${sample.battery_level}%`);
 }
 
 let child = null;
 let restartDelay = 1000;
 
-function startSampler() {
+// Recompiles only when the source is newer, so a git pull picks up sampler changes
+// on the next restart without a manual build step.
+function ensureMacSampler() {
+  if (existsSync(MAC_SAMPLER_BINARY) && statSync(MAC_SAMPLER_BINARY).mtimeMs >= statSync(MAC_SAMPLER_SOURCE).mtimeMs) return;
+  log('[tracker] compiling mac-sampler.swift');
+  execFileSync('/usr/bin/swiftc', ['-O', MAC_SAMPLER_SOURCE, '-o', MAC_SAMPLER_BINARY], { stdio: 'pipe' });
+}
+
+function spawnSampler() {
+  if (IS_MAC) {
+    const idleSeconds = process.env.TRACKER_IDLE_SECONDS || String(IDLE_THRESHOLD_MS / 1000);
+    return spawn(MAC_SAMPLER_BINARY, [process.env.TRACKER_WINDOW_SECONDS || '60', idleSeconds]);
+  }
   const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
-  child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+  return spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
     windowsHide: true,
   });
+}
+
+function startSampler() {
+  child = spawnSampler();
 
   createInterface({ input: child.stdout }).on('line', line => {
     const trimmed = line.trim();
@@ -233,5 +287,13 @@ lock.listen(LOCK_PORT, '127.0.0.1', () => {
   // ASCII only: Get-Content reads the log as ANSI by default, so an em dash arrives
   // mangled on the one screen you would read when something has gone wrong.
   log(`[tracker] running as "${DEVICE_ID}" - one row per active minute.`);
+  if (IS_MAC) {
+    try {
+      ensureMacSampler();
+    } catch (e) {
+      log(`[tracker] could not compile mac-sampler.swift: ${e.stderr || e.message}`);
+      process.exit(1);
+    }
+  }
   startSampler();
 });

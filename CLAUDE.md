@@ -181,14 +181,16 @@ names are separate, in `formatWifiName` (Next.js only), since two offices share 
 category but should not share a label.
 
 > **Known limitation — `Ethernet/Off` is ambiguous.** A wired connection carries no SSID,
-> so it cannot distinguish one location from another; it is currently assumed to be Home.
-> That holds today because the only reporting PC is the Zenbook, a personal machine that
-> lives at home. It breaks the moment a tracked machine is wired up somewhere else — which
-> is exactly what the work MacBook will be. Resolving it needs a second network
-> fingerprint, most reliably the default gateway's MAC address (unique per router, unlike
-> the subnet). Capture it in `metadata` and branch on it when `wifi_ssid` is `Ethernet/Off`.
-> Design this together with the macOS tracker rather than retrofitting it onto the Zenbook,
-> where the ambiguity does not yet exist.
+> so the Zenbook cannot distinguish one location from another; it is assumed to be Home,
+> which holds because the Zenbook lives at home.
+>
+> **The MacBook (`device_id = 'MacBook'`) identifies networks by gateway MAC instead.**
+> macOS 14.4+ redacts the SSID for processes without Location Services, so the Mac
+> tracker reads the default gateway's MAC (no permission needed) and `NETWORK_MAP` in its
+> `.env.local` translates known routers into the SSIDs above
+> (`<home-mac>=Depto 402;<office-mac>=IF-Comunidad`). Unknown routers report
+> `Desconocido` → Fuera. This also covers a wired connection at the office. The raw MAC
+> is kept in `metadata.gateway_mac`, with `metadata.network_source = 'gateway_mac'`.
 
 ### Game Detection
 Hardcoded in `data-processor.ts`:

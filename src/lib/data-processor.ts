@@ -15,7 +15,7 @@ const IGNORED_APPS = ['Lanzador del sistema', 'Pantalla Apagada', 'Reloj', 'Cloc
 // Machines whose activity counts as PC time. 'windows-pc' is the legacy id the first
 // laptop reported under; 'Lenovo Yoga 7 Slim' and 'PC Escritorio' were sold in May 2026
 // and stay listed so historical days still resolve.
-const PC_DEVICE_IDS = ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'Zenbook'];
+const PC_DEVICE_IDS = ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'Zenbook', 'MacBook'];
 const TRACKED_DEVICE_IDS = [...PC_DEVICE_IDS, 'oppo-5-lite', 'moon-reader'];
 const METRICS_PAGE_SIZE = 1000;
 

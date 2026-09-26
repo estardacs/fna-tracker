@@ -128,7 +128,7 @@ async function calculateDailyStats(supabase: any, dateStr: string): Promise<Dash
 
   // Mirrors PC_DEVICE_IDS in src/lib/data-processor.ts — keep both in sync. The first
   // three are retired machines, kept so historical days still resolve.
-  const pcData = metrics.filter((m: any) => ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'Zenbook'].includes(m.device_id));
+  const pcData = metrics.filter((m: any) => ['windows-pc', 'Lenovo Yoga 7 Slim', 'PC Escritorio', 'Zenbook', 'MacBook'].includes(m.device_id));
   const mobileData = metrics.filter((m: any) => m.device_id === 'oppo-5-lite');
   const readingData = metrics.filter((m: any) => m.device_id === 'moon-reader');
 
