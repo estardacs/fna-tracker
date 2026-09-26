@@ -284,6 +284,12 @@ A single long-lived `powershell.exe` does per-second sampling and prints one JSO
 minute — spawning it 60 times a minute would recompile the Win32 interop every time. Idle
 seconds (>3 min without input) are dropped rather than attributed to the focused window.
 Set `DEVICE_ID` to override the device name; it defaults to `Zenbook`.
+
+On macOS (`device_id = 'MacBook'`) the sampler is `scripts/mac-sampler.swift`, run as a
+LaunchAgent by `scripts/install-mac-tracker.sh`. It has **no idle cutoff**: a second
+counts whenever the display is on and the session unlocked, so a video watched without
+touching anything is counted in full. Walking away without locking overcounts until the
+display sleeps (10 min on the MacBook, which locks immediately on display sleep).
 `scripts/start-tracker.vbs` launches it hidden at login via `shell:startup`.
 
 ---

@@ -26,8 +26,10 @@
  *
  *   NETWORK_MAP=<home-mac>=Depto 402;<office-mac>=IF-Comunidad
  *
+ * The Mac has no idle cutoff: it counts while the display is on and unlocked.
+ *
  * TRACKER_DRY_RUN=1 logs each row instead of inserting it. On macOS, TRACKER_WINDOW_SECONDS
- * and TRACKER_IDLE_SECONDS shorten the sampling window and idle cutoff for testing.
+ * shortens the sampling window for testing.
  */
 import { createClient } from '@supabase/supabase-js';
 import { execFileSync, spawn } from 'child_process';
@@ -221,8 +223,7 @@ function ensureMacSampler() {
 
 function spawnSampler() {
   if (IS_MAC) {
-    const idleSeconds = process.env.TRACKER_IDLE_SECONDS || String(IDLE_THRESHOLD_MS / 1000);
-    return spawn(MAC_SAMPLER_BINARY, [process.env.TRACKER_WINDOW_SECONDS || '60', idleSeconds]);
+    return spawn(MAC_SAMPLER_BINARY, [process.env.TRACKER_WINDOW_SECONDS || '60']);
   }
   const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
   return spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
@@ -283,7 +284,7 @@ lock.once('error', err => {
   throw err;
 });
 
-lock.listen(LOCK_PORT, '127.0.0.1', () => {
+function start() {
   // ASCII only: Get-Content reads the log as ANSI by default, so an em dash arrives
   // mangled on the one screen you would read when something has gone wrong.
   log(`[tracker] running as "${DEVICE_ID}" - one row per active minute.`);
@@ -296,4 +297,8 @@ lock.listen(LOCK_PORT, '127.0.0.1', () => {
     }
   }
   startSampler();
-});
+}
+
+// A dry run inserts nothing, so it cannot double count and may run beside the real one.
+if (DRY_RUN) start();
+else lock.listen(LOCK_PORT, '127.0.0.1', start);

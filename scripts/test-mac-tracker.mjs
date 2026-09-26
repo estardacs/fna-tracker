@@ -3,6 +3,9 @@
  * Calculator), so do not type while it runs. Nothing is written to Supabase: the anon
  * key cannot delete, so a test row could not be cleaned up.
  *
+ * The lock screen is not covered: `pmset displaysleepnow` wakes straight back up on a
+ * Mac with Apple Watch unlock or recent input, so it cannot hold a lock long enough.
+ *
  *   node scripts/test-mac-tracker.mjs
  */
 import { execFileSync, spawn } from 'child_process';
@@ -65,24 +68,21 @@ execFileSync('open', ['-g', '-a', 'Calculator']);
 await sleep(2000);
 
 // 1. Sampler follows the frontmost app and reports battery + gateway.
-const [sample] = await collectJson(SAMPLER, ['8', '100000'], {}, 1, 15000, switchApps);
+const [sample] = await collectJson(SAMPLER, ['8'], {}, 1, 15000, switchApps);
 execFileSync('osascript', ['-e', 'quit app "Calculator"']);
 const apps = Object.keys(sample?.breakdown || {});
 check('sampler: emits a window', '1 JSON line', sample ? '1 JSON line' : 'nothing', !!sample);
 check('sampler: sees Finder', 'Finder in breakdown', apps.join(', '), apps.includes('Finder'));
 check('sampler: sees Calculator', 'Calculadora/Calculator', apps.join(', '), apps.some(a => /^Calcula/.test(a)));
 const total = Object.values(sample?.breakdown || {}).reduce((a, b) => a + b, 0);
-check('sampler: seconds sum to window', 8, total, total === 8);
+// No keyboard or mouse input happens during the run, so this also proves there is no idle cutoff.
+check('sampler: every second counted without input', 8, total, total === 8);
 check('sampler: gateway MAC', gatewayMac, sample?.gateway_mac, sample?.gateway_mac === gatewayMac);
 check('sampler: battery in 0..100', '0..100', sample?.battery_level, sample?.battery_level >= 0 && sample?.battery_level <= 100);
 check('sampler: is_charging boolean', 'boolean', typeof sample?.is_charging, typeof sample?.is_charging === 'boolean');
 
-// 2. Idle threshold 0 means every second is idle, so the window must stay silent.
-const idle = await collectJson(SAMPLER, ['3', '0'], {}, 1, 5000);
-check('sampler: idle window is silent', 'no output', idle.length ? 'output' : 'no output', idle.length === 0);
-
 // 3 + 4. Tracker maps the gateway to an SSID; an unknown router becomes Desconocido.
-const trackerEnv = { TRACKER_DRY_RUN: '1', TRACKER_WINDOW_SECONDS: '3', TRACKER_IDLE_SECONDS: '100000' };
+const trackerEnv = { TRACKER_DRY_RUN: '1', TRACKER_WINDOW_SECONDS: '3' };
 for (const [label, networkMap, expectedSsid] of [
   ['known router', `${gatewayMac}=Depto 402`, 'Depto 402'],
   ['unknown router', 'aa:bb:cc:dd:ee:ff=IF-Comunidad', 'Desconocido'],

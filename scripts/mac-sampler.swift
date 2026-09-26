@@ -4,12 +4,14 @@
 //
 //   {"breakdown": {appName: seconds}, "gateway_mac", "battery_level", "is_charging"}
 //
-// Idle seconds are dropped, so a window spent away from the keyboard prints nothing.
-// Needs no TCC permission: frontmost app, idle time, battery and the ARP table are all
-// readable by an unprivileged process. The SSID is not (macOS 14.4+ redacts it without
+// Unlike the Windows sampler there is no idle cutoff: a second counts whenever the
+// display is on and the session unlocked, so a long video watched without touching
+// anything is counted in full. The display sleeping or the screen locking is what ends
+// a session. Needs no TCC permission: frontmost app, display and lock state, battery
+// and the ARP table are all readable by an unprivileged process. The SSID is not (macOS 14.4+ redacts it without
 // Location Services), which is why the network is identified by the gateway's MAC.
 //
-// Usage: mac-sampler [windowSeconds=60] [idleThresholdSeconds=180]
+// Usage: mac-sampler [windowSeconds=60]
 
 import AppKit
 import CoreGraphics
@@ -17,15 +19,20 @@ import IOKit.ps
 
 let arguments = CommandLine.arguments
 let windowSeconds = arguments.count > 1 ? Int(arguments[1]) ?? 60 : 60
-let idleThresholdSeconds = arguments.count > 2 ? Double(arguments[2]) ?? 180 : 180
 
 // Frontmost while the screen is locked or the screensaver runs; not real usage.
 let ignoredApps: Set<String> = ["loginwindow", "ScreenSaverEngine"]
 
-let anyInputEvent = CGEventType(rawValue: UInt32.max)!
-
 var accumulated: [String: Int] = [:]
 var tick = 0
+
+func screenInUse() -> Bool {
+    if CGDisplayIsAsleep(CGMainDisplayID()) != 0 { return false }
+    guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+    if session["CGSSessionScreenIsLocked"] as? Bool == true { return false }
+    // False while another user is logged in through fast user switching.
+    return session[kCGSessionOnConsoleKey as String] as? Bool ?? true
+}
 
 func run(_ executable: String, _ args: [String]) -> String {
     let process = Process()
@@ -91,8 +98,7 @@ func emit() {
 let timer = Timer(timeInterval: 1.0, repeats: true) { _ in
     tick += 1
 
-    let idleSeconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInputEvent)
-    if idleSeconds < idleThresholdSeconds,
+    if screenInUse(),
        let name = NSWorkspace.shared.frontmostApplication?.localizedName,
        !ignoredApps.contains(name) {
         accumulated[name, default: 0] += 1
