@@ -84,7 +84,8 @@ export async function launchBrowser(
   const executablePath = findChrome(chromePath);
   if (!executablePath) {
     throw new Error(
-      "No se encontró Chrome/Chromium. Instala Google Chrome o pasa chromePath en las opciones.\n" +
+      "No se encontró Chrome/Chromium. Instala Google Chrome o pasa --chrome=<ruta>.\n" +
+        "  Windows: C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\n" +
         "  Ubuntu/Debian: sudo apt install google-chrome-stable\n" +
         "  macOS: brew install --cask google-chrome",
     );

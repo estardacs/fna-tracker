@@ -50,11 +50,19 @@ src/banks/bchile.ts
 
 ## Cambios respecto a upstream
 
-Uno solo, marcado en el propio archivo:
+Dos, ambos marcados en el propio archivo:
 
 - **`src/infrastructure/browser.ts` — el sandbox de Chrome queda encendido.** Upstream pone
   `--no-sandbox` y `--disable-setuid-sandbox` fijos en `DEFAULT_ARGS`. Acá son opt-in con
   `OBC_ALLOW_NO_SANDBOX=1`, que solo hace falta en un contenedor corriendo como root.
+
+- **`src/utils.ts` — `findChrome` conoce Windows nativo.** Upstream solo busca en rutas de
+  Linux, de macOS y en `/mnt/c/...` (o sea WSL mirando el disco de Windows). Corriendo desde
+  PowerShell no encuentra nada y el error sugiere `apt install google-chrome-stable`, que en
+  Windows no significa nada. Se agregan las rutas nativas, armadas desde `PROGRAMFILES`,
+  `PROGRAMFILES(X86)` y `LOCALAPPDATA` en vez de un `C:` fijo. El mensaje de error de
+  `browser.ts` también menciona la ruta de Windows y `--chrome=<ruta>`. Vale la pena
+  ofrecerlo upstream.
 
 ## Revisión de seguridad — 2026-09-26
 

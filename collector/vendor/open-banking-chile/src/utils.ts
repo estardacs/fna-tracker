@@ -57,6 +57,20 @@ export function findChrome(customPath?: string): string | null {
     // Windows (WSL)
     "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
     "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+    // CAMBIO RESPECTO A UPSTREAM — ver ../../UPSTREAM.md
+    //
+    // Windows nativo. Upstream solo contempla Linux, macOS y WSL leyendo /mnt/c, así que
+    // corriendo desde PowerShell no encuentra nada y el error sugiere `apt install`. Las
+    // rutas se arman desde las variables de entorno y no con "C:" fijo, porque Program Files
+    // no está en C: en todas las instalaciones.
+    ...(process.platform === "win32"
+      ? [
+          `${process.env.PROGRAMFILES ?? "C:\\Program Files"}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${process.env["PROGRAMFILES(X86)"] ?? "C:\\Program Files (x86)"}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${process.env.LOCALAPPDATA ?? ""}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${process.env.PROGRAMFILES ?? "C:\\Program Files"}\\Chromium\\Application\\chrome.exe`,
+        ]
+      : []),
   ];
 
   for (const p of candidates) {

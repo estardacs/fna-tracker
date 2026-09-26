@@ -19,7 +19,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as readline from 'node:readline';
 
 import bchile from './vendor/open-banking-chile/src/banks/bchile.js';
 import type {
@@ -119,63 +118,86 @@ function redact(s: string, secrets: string[]): string {
 // ─── Credenciales ────────────────────────────────────────────────────────────────────
 
 /**
- * UNA sola interfaz de readline para toda la sesión, reutilizada en cada prompt.
+ * Lectura de credenciales sin readline.
  *
- * Crear una por pregunta parece inocuo y no lo es: con la entrada por tubería, la primera
- * interfaz consume por lectura adelantada todas las líneas disponibles, así que la segunda
- * encuentra EOF, su promesa nunca resuelve, el event loop queda vacío y Node **sale con
- * código 0 sin hacer nada** — un fallo silencioso que parece que el programa simplemente
- * no hizo nada.
- */
-let rl: readline.Interface | null = null;
-
-function getRl(): readline.Interface {
-  if (rl) return rl;
-  rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  // El eco de readline queda apagado SIEMPRE, no condicionado a una bandera.
-  //
-  // Un silencio condicional pierde una carrera real: con la entrada por tubería, readline
-  // recibe las dos líneas en un mismo chunk y hace eco de ambas mientras se procesa la
-  // primera pregunta, o sea antes de que la bandera se active — y la clave termina impresa.
-  // Apagado del todo no hay carrera posible, y lo que sí debe verse se imprime a mano.
-  (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = () => {};
-  return rl;
-}
-
-/**
- * Las líneas se consumen por el iterador asíncrono de la interfaz, no con `rl.question`.
+ * readline en modo terminal manda códigos de cursor (`\x1b[1G`, `\x1b[0J`) DIRECTO al stream,
+ * no a través de `_writeToOutput`, así que limpia la línea y se come el prompt que uno acaba
+ * de imprimir: el usuario termina escribiendo su clave a ciegas. Encima, crear una interfaz
+ * por pregunta pierde líneas por lectura adelantada. Ninguno de los dos problemas existe
+ * leyendo el stream a mano, y es poco código.
  *
- * `question` solo entrega la línea si ya estaba esperando cuando llega, así que con la entrada
- * por tubería la segunda línea puede llegar antes de que se registre la segunda pregunta y
- * readline la descarta. El iterador las encola y las entrega en orden, sin importar el momento
- * en que lleguen, así que funciona igual con un humano escribiendo o con un archivo redirigido
- * —lo que además permite probar esto sin teclear nada.
+ * Dos caminos explícitos: terminal real en modo raw, o entrada redirigida leída por líneas
+ * —esto último para poder probar todo el flujo sin teclear nada.
  */
-let lines: AsyncIterator<string> | null = null;
-
 async function ask(question: string, hidden: boolean): Promise<string> {
-  const iface = getRl();
-  lines ??= iface[Symbol.asyncIterator]();
-
   process.stdout.write(question);
-
-  const { value, done } = await lines.next();
-
-  // Sin esto, la entrada cerrada dejaría la promesa colgada y el proceso terminaría con
-  // código 0 sin haber hecho nada: un fallo que parece que el programa no se ejecutó.
-  if (done) throw new Error(`No se recibió respuesta a "${question.trim()}" (entrada cerrada).`);
-
-  const answer = String(value).trim();
-  // El eco lo hacemos nosotros, y solo para lo que no es secreto.
-  process.stdout.write(hidden ? '\n' : `${answer}\n`);
-  return answer;
+  const answer = process.stdin.isTTY ? await readFromTty(hidden) : await readFromPipe();
+  return answer.trim();
 }
 
-/** Hay que cerrarla o el proceso no termina: readline mantiene vivo el event loop. */
-function closeRl() {
-  rl?.close();
-  rl = null;
-  lines = null;
+function readFromTty(hidden: boolean): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    let buf = '';
+
+    const cleanup = () => {
+      stdin.removeListener('data', onData);
+      stdin.setRawMode(false);
+      stdin.pause();
+    };
+
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n') {
+          cleanup();
+          process.stdout.write('\n');
+          return resolve(buf);
+        }
+        if (ch === '\u0003') {              // Ctrl+C: en modo raw hay que manejarlo a mano
+          cleanup();
+          process.stdout.write('\n');
+          return reject(new Error('Cancelado.'));
+        }
+        if (ch === '\u007f' || ch === '\b') {
+          if (buf.length) {
+            buf = buf.slice(0, -1);
+            if (!hidden) process.stdout.write('\b \b');
+          }
+          continue;
+        }
+        if (ch < ' ') continue;             // el resto de los controles se ignora
+        buf += ch;
+        // La clave no se eco NUNCA, ni como asteriscos: el largo también es información.
+        if (!hidden) process.stdout.write(ch);
+      }
+    };
+
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    stdin.on('data', onData);
+  });
+}
+
+// La entrada redirigida se lee completa una vez y se reparte por líneas. Esperar el EOF acá
+// es correcto: si viene de una tubería, ya está todo disponible.
+let pipedLines: string[] | null = null;
+let pipedIndex = 0;
+
+async function readFromPipe(): Promise<string> {
+  if (!pipedLines) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+    pipedLines = Buffer.concat(chunks).toString('utf8').split(/\r?\n/);
+  }
+  if (pipedIndex >= pipedLines.length) {
+    // Sin esto la promesa quedaría colgada y el proceso terminaría con código 0 sin hacer
+    // nada: un fallo que parece que el programa nunca corrió.
+    throw new Error('La entrada se agotó antes de responder todas las preguntas.');
+  }
+  const line = pipedLines[pipedIndex++];
+  process.stdout.write('\n');
+  return line;
 }
 
 // ─── Límite de frecuencia ────────────────────────────────────────────────────────────
@@ -361,8 +383,6 @@ async function main() {
     process.exit(1);
   }
 
-  closeRl();
-
   console.log(`\nConectando con ${SCRAPERS[bank].name}…`);
   console.log('Si el banco pide clave dinámica, apruébala en tu app cuando aparezca.\n');
 
@@ -415,7 +435,6 @@ async function main() {
 }
 
 main().catch(e => {
-  closeRl();
   // Sin `secrets` en alcance acá, así que se redacta lo genérico y nada más.
   console.error('Error fatal:', redact(e instanceof Error ? e.message : String(e), []));
   process.exit(1);
