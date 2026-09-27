@@ -21,6 +21,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import bchile from './vendor/open-banking-chile/src/banks/bchile.js';
+import santander from './vendor/open-banking-chile/src/banks/santander.js';
+import edwards from './vendor/open-banking-chile/src/banks/edwards.js';
 import type {
   AccountBalance, BankMovement, CreditCardBalance, ScrapeResult,
 } from './vendor/open-banking-chile/src/types.js';
@@ -64,7 +66,7 @@ loadEnv();
 // parece bastante desde su lado. El upstream recomienda máximo una corrida por hora.
 const MIN_MINUTES_BETWEEN_RUNS = 30;
 
-const SCRAPERS = { bchile } as const;
+const SCRAPERS = { bchile, santander, edwards } as const;
 type BankId = keyof typeof SCRAPERS;
 
 // ─── Argumentos ──────────────────────────────────────────────────────────────────────

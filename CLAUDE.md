@@ -434,7 +434,7 @@ al build de Vercel, y sin ese `exclude` el `npm run build` type-checkearia el co
 fallaria.
 
 ```bash
-npm run sync-banks -- --bank=bchile                        # dry run: no envia nada
+npm run sync-banks -- --bank=bchile|santander|edwards       # dry run: no envia nada
 npm run sync-banks -- --bank=bchile --confirm
 npm run sync-banks -- --bank=bchile --complete --confirm   # habilita reconciliacion
 npm run sync-banks -- --bank=bchile --debug                # log del scraper, redactado

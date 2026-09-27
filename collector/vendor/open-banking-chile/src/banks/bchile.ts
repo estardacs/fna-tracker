@@ -423,12 +423,35 @@ async function scrapeBchile(session: BrowserSession, options: ScraperOptions): P
   }
 
   // Balance
+  //
+  // CAMBIO RESPECTO A UPSTREAM — ver ../../UPSTREAM.md
+  //
+  // Upstream busca `tipo === "CUENTA_CORRIENTE"` y, si no calza, deja el saldo sin definir y
+  // no registra nada: el `catch {}` vacío se come incluso el error. En una Cuenta Fan eso da
+  // saldo 0 en silencio, porque más abajo cae al `saldo` del primer movimiento de la cartola,
+  // que ese endpoint devuelve en "0". Un cero falso es peor que un dato ausente: se ve igual
+  // que una cuenta vacía de verdad.
+  //
+  // Ahora: se intenta el tipo exacto, se cae a la primera cuenta en CLP si no calza, se
+  // registra qué camino se usó, y el error deja rastro en vez de desaparecer.
   let balance: number | undefined;
   try {
     const saldos = await apiGet<Array<{ moneda: string; tipo: string; disponible: number }>>(page, "bff-pp-prod-ctas-saldos/productos/cuentas/saldos");
-    const clp = saldos.find(s => s.moneda === "CLP" && s.tipo === "CUENTA_CORRIENTE");
-    if (clp) { balance = clp.disponible; debugLog.push(`  Balance CLP: $${balance}`); }
-  } catch { /* ignore */ }
+    debugLog.push(`  saldos: ${saldos.length} cuenta(s), tipos=${saldos.map(s => s.tipo).join('|')}`);
+
+    const exact = saldos.find(s => s.moneda === "CLP" && s.tipo === "CUENTA_CORRIENTE");
+    const anyClp = saldos.find(s => s.moneda === "CLP");
+    const hit = exact ?? anyClp;
+
+    if (hit) {
+      balance = hit.disponible;
+      debugLog.push(`  Balance CLP: $${balance} (tipo=${hit.tipo}${exact ? '' : ', por fallback'})`);
+    } else {
+      debugLog.push(`  sin saldo en CLP en la respuesta`);
+    }
+  } catch (err) {
+    debugLog.push(`  saldos falló: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   const fullName = products.nombre || `${clientData.datosCliente.nombres} ${clientData.datosCliente.apellidoPaterno}`.trim();
 

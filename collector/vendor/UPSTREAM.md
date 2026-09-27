@@ -23,16 +23,30 @@ un selector es un commit normal en vez de un parche sobre `node_modules`.
 
 ## Qué se copió
 
-Solo el cierre de imports de Banco de Chile: 6 archivos, ~50 KB.
+El cierre de imports de Banco de Chile, Santander y Edwards: 15 archivos.
 
 ```
 src/types.ts
 src/utils.ts
+src/intercept.ts                      (solo santander)
 src/infrastructure/browser.ts
 src/infrastructure/scraper-runner.ts
 src/actions/two-factor.ts
-src/banks/bchile.ts
+src/actions/{balance,credit-card,extraction,login,navigation,pagination}.ts
+src/banks/{bchile,santander,edwards}.ts
 ```
+
+Cobertura de tarjeta de crédito, que no es igual entre bancos:
+
+| banco | cuenta | TC no facturada | TC facturada |
+|---|---|---|---|
+| `bchile` | sí | sí (`listaMovNoFactur`) | sí (`estadoCuentaNacional`) |
+| `santander` | sí (vía `openbanking.santander.cl`) | sí (`consultaUltimosMovimientos`) | sí (`estadoCuentaNacional`, con cuotas) |
+| `edwards` | sí | vía `actions/credit-card.ts` | vía `actions/credit-card.ts` |
+
+Santander declara además `SANTANDER_2FA_TIMEOUT_SEC` y llama a `detect2FA`/`waitFor2FA`, así
+que a diferencia de Banco de Chile es probable que pida aprobación en la app. Importa para
+cualquier plan de correr esto desatendido.
 
 ## Qué se eliminó, y por qué
 
@@ -50,7 +64,7 @@ src/banks/bchile.ts
 
 ## Cambios respecto a upstream
 
-Tres, todos marcados en el propio archivo:
+Cuatro, todos marcados en el propio archivo:
 
 - **`src/infrastructure/browser.ts` — el sandbox de Chrome queda encendido.** Upstream pone
   `--no-sandbox` y `--disable-setuid-sandbox` fijos en `DEFAULT_ARGS`. Acá son opt-in con
@@ -79,7 +93,21 @@ Tres, todos marcados en el propio archivo:
   Ojo: upstream colapsa todas las cuentas corrientes en una sola entrada de `accounts`, así que
   se toma el label de la primera. Con más de una cuenta habría que rehacer esa parte.
 
-## Revisión de seguridad — 2026-09-26
+- **`src/banks/bchile.ts` — el saldo ya no se reporta como 0 cuando no se pudo leer.** Upstream
+  busca `tipo === "CUENTA_CORRIENTE"` y si no calza deja el saldo sin definir, con un
+  `catch {}` vacío que se come hasta el error; más abajo cae al `saldo` del primer movimiento de
+  la cartola, que ese endpoint devuelve en `"0"`. En una Cuenta Fan el resultado es un saldo 0
+  falso, indistinguible de una cuenta vacía de verdad. Ahora hay fallback a la primera cuenta en
+  CLP, se registra qué camino se usó y el error deja rastro.
+
+## Revisión de seguridad — 2026-09-26, ampliada el 2026-09-27
+
+La segunda pasada cubrió los 8 archivos nuevos que trajeron Santander y Edwards
+(`actions/*`, `intercept.ts`, los dos bancos) con los mismos criterios: **cero** red del lado
+de Node, cero escrituras a disco, cero `child_process`/`execSync`/`spawn`/`new Function`/
+`require` dinámico, cero llamadas a `console.*`, y los únicos hostnames son
+`banco.santander.cl`, `api-dsk.santander.cl` y `openbanking.santander.cl`. Los 24 hits de
+`eval` son `page.evaluate`.
 
 Hecha sobre el árbol completo del commit antes de copiar, y antes de cualquier ejecución con
 credenciales reales.
