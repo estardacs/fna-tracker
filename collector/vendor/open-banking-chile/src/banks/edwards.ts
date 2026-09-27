@@ -201,22 +201,30 @@ async function scrapeEdwards(session: BrowserSession, options: ScraperOptions): 
     if (result) { tcClicked = true; await delay(4000); break; }
   }
 
+  // CAMBIO RESPECTO A UPSTREAM — ver ../../UPSTREAM.md
+  //
+  // Upstream empuja los movimientos de tarjeta al MISMO arreglo que los de la cuenta y
+  // devuelve todo junto, así que los cargos de la tarjeta quedarían guardados como si fueran
+  // de una cuenta corriente. Peor: el reemplazo del conjunto no facturado solo corre para
+  // cuentas de tipo credit_card, de modo que un movimiento que cambia de monto al facturarse
+  // duplicaría para siempre sin nada que retire la copia anterior.
+  const cardMovements: BankMovement[] = [];
+
   if (tcClicked) {
     if (await clickTcTab(page, "movimientos por facturar")) {
       const tcPorFact = await edwardsPaginate(page, (p) => extractCreditCardMovements(p, "unbilled"), debugLog);
-      movements.push(...tcPorFact);
+      cardMovements.push(...tcPorFact);
       debugLog.push(`  TC por facturar: ${tcPorFact.length}`);
     }
     if (await clickTcTab(page, "movimientos facturados")) {
       const tcFact = await edwardsPaginate(page, (p) => extractCreditCardMovements(p, "billed"), debugLog);
-      movements.push(...tcFact);
+      cardMovements.push(...tcFact);
       debugLog.push(`  TC facturados: ${tcFact.length}`);
     }
-    movements = deduplicateMovements(movements);
   }
 
-  debugLog.push(`8. Extracted ${movements.length} movements`);
-  progress(`Listo — ${movements.length} movimientos totales`);
+  debugLog.push(`8. Extracted ${movements.length} de cuenta + ${cardMovements.length} de tarjeta`);
+  progress(`Listo — ${movements.length + cardMovements.length} movimientos totales`);
 
   let balance: number | undefined;
   const withBalance = movements.find((m) => m.balance > 0);
@@ -226,7 +234,16 @@ async function scrapeEdwards(session: BrowserSession, options: ScraperOptions): 
   await doSave(page, "04-final");
   const ss = doScreenshots ? (await page.screenshot({ encoding: "base64", fullPage: true })) as string : undefined;
 
-  return { success: true, bank, accounts: [{ balance: balance || undefined, movements }], screenshot: ss, debug: debugLog.join("\n") };
+  return {
+    success: true,
+    bank,
+    accounts: [{ balance: balance || undefined, movements }],
+    creditCards: cardMovements.length > 0
+      ? [{ label: "Tarjeta de Crédito", movements: deduplicateMovements(cardMovements) }]
+      : undefined,
+    screenshot: ss,
+    debug: debugLog.join("\n"),
+  };
 }
 
 // ─── Export ──────────────────────────────────────────────────────

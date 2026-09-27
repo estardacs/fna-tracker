@@ -500,6 +500,23 @@ numero completo de tarjeta (las CHECK de `mask` y `card` hacen fallar el insert 
 regresiona y lo emite), y los screenshots del scraper, que traen saldos y el nombre del
 titular como pixeles. `bank_sync_runs.error` pasa por `sanitizeError()`.
 
+### Estado por banco
+
+| banco | login | cuenta | saldo | tarjeta |
+|---|---|---|---|---|
+| `bchile` | ok, **sin clave dinamica** | ok (35 mov, fechas correctas) | fallback agregado; el 0 anterior era falso | sin tarjeta en esta cuenta |
+| `edwards` | ok | ok (20 mov, neto plausible) | ok ($50.000) | pestanas no encontradas, 0 extraido |
+| `santander` | ok, sin clave dinamica en la primera corrida | **roto**: 0 mov en las 3 cuentas, por API y por HTML | ok ($60.146) | **roto**: pestanas no encontradas |
+
+Tres cosas que upstream hace mal en los tres bancos y que estan parcheadas en la copia (ver
+`collector/vendor/UPSTREAM.md`): no entrega `label` de cuenta, junta los movimientos de tarjeta
+en el arreglo de la cuenta, y Santander entrega el **numero de cuenta completo** en vez de una
+mascara — `maskAccountLabel()` en el colector lo reduce a los ultimos cuatro digitos antes de
+que llegue al payload.
+
+Santander adjunta el saldo solo si hay una sola cuenta: `extractBalance` lee un numero de la
+pantalla, el de la cuenta seleccionada, y con varias no se puede atribuir.
+
 ### Frecuencia
 
 El colector se niega a correr un banco cuya ultima corrida fue hace menos de 30 minutos, via

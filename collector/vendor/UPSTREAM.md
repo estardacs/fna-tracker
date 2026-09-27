@@ -64,7 +64,7 @@ cualquier plan de correr esto desatendido.
 
 ## Cambios respecto a upstream
 
-Cinco, todos marcados en el propio archivo:
+Seis, todos marcados en el propio archivo:
 
 - **`src/infrastructure/browser.ts` — el sandbox de Chrome queda encendido.** Upstream pone
   `--no-sandbox` y `--disable-setuid-sandbox` fijos en `DEFAULT_ARGS`. Acá son opt-in con
@@ -119,6 +119,18 @@ Cinco, todos marcados en el propio archivo:
   cuentas y saldo funcionan; las tres cuentas y la tarjeta devuelven 0 movimientos, tanto por
   API como por el fallback de HTML. No hay issue abierto en upstream por esto (sí #53 por
   Scotiabank). Los selectores llevan cuatro meses sin tocarse.
+
+- **`src/banks/edwards.ts` — la tarjeta sale del arreglo de la cuenta.** Mismo defecto que
+  Santander: upstream hace `movements.push(...tcPorFact)` y `movements.push(...tcFact)` sobre el
+  mismo arreglo de la cuenta corriente. Además de guardar cargos de tarjeta como si fueran de
+  cuenta, rompe el reemplazo del conjunto no facturado, que solo corre para cuentas de tipo
+  `credit_card`: un movimiento que cambia de monto al facturarse duplicaría para siempre, sin
+  nada que retire la copia anterior. Ahora va en `creditCards`.
+
+  **Estado conocido:** los movimientos de cuenta funcionan (20 extraídos, neto plausible). Las
+  pestañas de tarjeta no se encuentran, así que no se extrae nada de la TC. Edwards tampoco
+  entrega label ni máscara de cuenta, así que su identidad se deriva del label genérico
+  "Cuenta" — estable, pero colapsaría dos cuentas en una si alguna vez hay más de una.
 
 ## Revisión de seguridad — 2026-09-26, ampliada el 2026-09-27
 
