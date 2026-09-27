@@ -526,7 +526,28 @@ que llegue al payload.
 Santander adjunta el saldo solo si hay una sola cuenta: `extractBalance` lee un numero de la
 pantalla, el de la cuenta seleccionada, y con varias no se puede atribuir.
 
-### MercadoPago: sonda antes de colector
+### MercadoPago
+
+```bash
+npm run sync-mp                 # dry run, ultimos 30 dias
+npm run sync-mp -- --days=90
+npm run sync-mp -- --confirm
+```
+
+Sin navegador, sin clave dinamica, sin credenciales bancarias: solo HTTPS contra
+api.mercadopago.com con `MP_ACCESS_TOKEN`. **Es el unico de los tres que podria correr
+desatendido en la nube**, porque no necesita Chrome ni un humano aprobando nada.
+
+Funciona en dos pasos, y esa es la parte que no es obvia: el reporte de liquidaciones da el
+libro mayor (fecha, monto, tipo, `SOURCE_ID`) pero su columna `DESCRIPTION` llega **vacia en
+todas las filas**, asi que el comercio sale de `GET /v1/payments/{SOURCE_ID}`. Se cachea por id
+y un fallo ahi no tumba la corrida: el movimiento queda con una descripcion generica
+`TIPO · METODO`. Primera corrida real: 86 movimientos, 86 con nombre de comercio.
+
+`display_timezone: 'GMT-03'` en la config hace que `TRANSACTION_DATE` ya venga en hora de
+Santiago, asi que la fecha se toma con un substring. Pasarla por `Date` la correria de dia.
+
+### Sonda de exploracion
 
 ```bash
 npm run probe-mp              # ultimos 30 dias
