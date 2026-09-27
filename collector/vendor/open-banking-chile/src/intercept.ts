@@ -33,15 +33,55 @@ export async function createInterceptor(
 ): Promise<Interceptor> {
   const captures = new Map<string, unknown[]>();
 
+  // Huella de cada respuesta ya guardada, para que la misma no entre dos veces por los dos
+  // caminos de captura (el hook dentro de la página y el listener de Node). Un duplicado exacto
+  // se convertiría en una segunda transacción idéntica aguas abajo, que es un dato inventado.
+  const seen = new Set<string>();
+
+  function store(id: string, data: unknown): void {
+    const fingerprint = `${id}:${JSON.stringify(data)}`;
+    if (seen.has(fingerprint)) return;
+    seen.add(fingerprint);
+    const existing = captures.get(id) ?? [];
+    existing.push(data);
+    captures.set(id, existing);
+  }
+
+  // CAMBIO RESPECTO A UPSTREAM — ver ../../UPSTREAM.md
+  //
+  // Captura desde Node con page.on("response"), además del hook dentro de la página.
+  //
+  // El hook de abajo usa page.exposeFunction + page.evaluateOnNewDocument. El segundo instala
+  // el wrapper en TODO documento nuevo, iframes incluidos, pero el primero expone el callback
+  // SOLO en el frame principal. En la banca privada de Santander los movimientos los pide un
+  // micro-frontend dentro de un iframe cross-origin (mibanco.santander.cl/.../Private_new/),
+  // así que el wrapper se instala, se dispara, y llama a un `window.__obcCapture` que en ese
+  // documento no existe — y el catch lo descarta en silencio. Resultado: "no data", con el
+  // endpoint correcto respondiendo perfectamente.
+  //
+  // page.on("response") no tiene ese problema: ve todas las respuestas de todos los frames,
+  // sin importar el origen y sin depender de ningún binding.
+  page.on("response", (res) => {
+    const url = res.url();
+    const ep = endpoints.find((e) => url.startsWith(e.urlPrefix));
+    if (!ep) return;
+
+    // Los preflight OPTIONS y los errores no traen cuerpo útil.
+    const status = res.status();
+    if (status < 200 || status >= 300) return;
+
+    void res
+      .json()
+      .then((data: unknown) => store(ep.id, data))
+      .catch(() => { /* no era JSON, o el cuerpo ya no está disponible */ });
+  });
+
   // Bridge: called from browser context → stores data in Node.js
   await page.exposeFunction(
     "__obcCapture",
     (id: string, dataJson: string) => {
       try {
-        const data: unknown = JSON.parse(dataJson);
-        const existing = captures.get(id) ?? [];
-        existing.push(data);
-        captures.set(id, existing);
+        store(id, JSON.parse(dataJson));
       } catch {
         // Ignore malformed JSON
       }

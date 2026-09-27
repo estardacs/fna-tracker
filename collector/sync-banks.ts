@@ -77,6 +77,42 @@ const getArg = (name: string): string | undefined => {
   return hit ? hit.slice(name.length + 3) : undefined;
 };
 
+/**
+ * Toda bandera desconocida es un error, y se detecta ANTES de pedir credenciales.
+ *
+ * Ignorarla en silencio es lo que hacía antes, y el costo real quedó claro: escribir
+ * `--comfirm` en vez de `--confirm` gastaba un login completo contra el banco, 30 minutos de
+ * throttle, y terminaba en un dry run que parecía una corrida normal. Con una bandera de por
+ * medio entre "no escribir nada" y "escribir en la base", adivinar la intención no corresponde.
+ */
+const KNOWN_FLAGS = ['--complete', '--confirm', '--headful', '--screenshots', '--debug'];
+const KNOWN_OPTS = ['--bank', '--from', '--to', '--chrome'];
+
+function assertKnownArgs() {
+  const unknown = args.filter(a => {
+    if (KNOWN_FLAGS.includes(a)) return false;
+    const name = a.split('=')[0];
+    return !(a.includes('=') && KNOWN_OPTS.includes(name));
+  });
+  if (unknown.length === 0) return;
+
+  for (const bad of unknown) {
+    // Sugerencia por distancia de edición simple: casi siempre es una letra cambiada.
+    const name = bad.split('=')[0];
+    const near = [...KNOWN_FLAGS, ...KNOWN_OPTS].find(k => {
+      if (Math.abs(k.length - name.length) > 1) return false;
+      let diff = 0;
+      for (let i = 0; i < Math.max(k.length, name.length); i++) if (k[i] !== name[i]) diff++;
+      return diff <= 2;
+    });
+    console.error(`Bandera desconocida: ${bad}${near ? `  ¿quisiste decir ${near}?` : ''}`);
+  }
+  console.error(`\nValidas: ${[...KNOWN_OPTS.map(o => o + '=…'), ...KNOWN_FLAGS].join(' ')}`);
+  process.exit(1);
+}
+
+assertKnownArgs();
+
 // Dry run es el default y --confirm es obligatorio para enviar, igual que prune-metrics.ts.
 const confirm = args.includes('--confirm');
 const headful = args.includes('--headful');

@@ -64,7 +64,7 @@ cualquier plan de correr esto desatendido.
 
 ## Cambios respecto a upstream
 
-Seis, todos marcados en el propio archivo:
+Siete, todos marcados en el propio archivo:
 
 - **`src/infrastructure/browser.ts` — el sandbox de Chrome queda encendido.** Upstream pone
   `--no-sandbox` y `--disable-setuid-sandbox` fijos en `DEFAULT_ARGS`. Acá son opt-in con
@@ -131,6 +131,30 @@ Seis, todos marcados en el propio archivo:
   pestañas de tarjeta no se encuentran, así que no se extrae nada de la TC. Edwards tampoco
   entrega label ni máscara de cuenta, así que su identidad se deriva del label genérico
   "Cuenta" — estable, pero colapsaría dos cuentas en una si alguna vez hay más de una.
+
+- **`src/intercept.ts` — la captura también ocurre a nivel de Node.** Upstream combina
+  `page.exposeFunction` con `page.evaluateOnNewDocument`. El segundo instala el wrapper de
+  `fetch`/XHR en todo documento nuevo, iframes incluidos; el primero expone el callback **solo en
+  el frame principal**. En la banca privada de Santander los movimientos los pide un
+  micro-frontend dentro de un iframe cross-origin (`mibanco.santander.cl/.../Private_new/`), así
+  que el wrapper se instala, se dispara, y llama a un `window.__obcCapture` que en ese documento
+  no existe — y su `catch` lo descarta en silencio.
+
+  El síntoma era "Checking API: no data" con el endpoint correcto respondiendo perfectamente:
+  el observador de `page.on("request")` mostró
+  `POST openbanking.santander.cl/account_balances_transactions_and_withholdings_retail/v1/current-accounts/transactions`,
+  exactamente el prefijo que el scraper busca. Ahora se agrega un `page.on("response")`, que ve
+  todas las respuestas de todos los frames sin depender de ningún binding, con una huella por
+  respuesta para que los dos caminos de captura no guarden la misma dos veces — un duplicado
+  exacto se convertiría aguas abajo en una transacción idéntica inventada.
+
+### Lo que el banco mide de vuelta
+
+La lista de endpoints de Santander incluye `perdsk/seguridad/Biocatch/getScore`, un dominio
+`wup-*.santander.cl` con decenas de POST, y `ruxitagentjs` (Dynatrace). O sea: biometría de
+comportamiento, que perfila tecleo y mouse precisamente para detectar automatización y toma de
+cuentas. No afecta la extracción hoy, pero es el dato más relevante para cualquier plan de
+correr esto desatendido desde un datacenter.
 
 ## Revisión de seguridad — 2026-09-26, ampliada el 2026-09-27
 
