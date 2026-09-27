@@ -61,9 +61,36 @@ function loadEnv() {
 
 loadEnv();
 
-// Los bancos bloquean la cuenta tras intentos fallidos de login, y un selector roto se le
-// parece bastante desde su lado. El upstream recomienda máximo una corrida por hora.
-const MIN_MINUTES_BETWEEN_RUNS = 30;
+/**
+ * Lo que de verdad bloquea una cuenta bancaria son los INTENTOS FALLIDOS, no la frecuencia.
+ *
+ * Banco de Chile bloquea la Clave Internet al tercer intento fallido, y Santander usa el mismo
+ * estandar de 3. Es un contador de contrasenas equivocadas, no de logins exitosos: mandando
+ * siempre la clave correcta, no hay numero de corridas que se acerque a ese umbral.
+ *
+ * La version anterior de esto esperaba 30 minutos entre corridas CUALESQUIERA, citando el
+ * README de upstream — que lo afirma en prosa, sin fuente, con un "puede", y sin una sola linea
+ * de codigo que lo implemente. Hacia esperar por un riesgo inexistente y no cubria el real.
+ *
+ * Ahora son dos guardas distintas:
+ *   - Dos logins fallidos seguidos frenan el banco. Se corta en 2 para dejar el tercer intento
+ *     —el que bloquea— en tus manos y no en las de un selector roto.
+ *   - Un minimo corto entre corridas, solo para atajar un bucle accidental. No pretende evadir
+ *     la deteccion de bots: Akamai Bot Manager y BioCatch puntuan la sesion por huella y
+ *     comportamiento, no por cada cuanto corres.
+ */
+const MIN_MINUTES_BETWEEN_RUNS = 5;
+const MAX_CONSECUTIVE_LOGIN_FAILURES = 2;
+
+/** Mensajes con los que el scraper reporta que el banco rechazo las credenciales. */
+const LOGIN_FAILURE_PATTERNS = [
+  'Error del banco',
+  'No se encontró campo de clave',
+  'No se encontró campo de RUT',
+  'Timeout esperando aprobación de 2FA',
+];
+
+const isLoginFailure = (error: string) => LOGIN_FAILURE_PATTERNS.some(p => error.includes(p));
 
 /**
  * `edwards` está vendorizado pero NO registrado, a propósito.
@@ -262,29 +289,69 @@ async function readFromPipe(): Promise<string> {
 
 // ─── Límite de frecuencia ────────────────────────────────────────────────────────────
 
-type LastRuns = Record<string, string>;
+interface RunRecord { at: string; loginFailures: number }
+type LastRuns = Record<string, RunRecord>;
 
 function readLastRuns(): LastRuns {
   if (!existsSync(LAST_RUN)) return {};
-  try { return JSON.parse(readFileSync(LAST_RUN, 'utf8')) as LastRuns; } catch { return {}; }
+  try {
+    const raw = JSON.parse(readFileSync(LAST_RUN, 'utf8')) as Record<string, unknown>;
+    const out: LastRuns = {};
+    for (const [bank, value] of Object.entries(raw)) {
+      // El formato viejo guardaba solo la marca de tiempo como string.
+      if (typeof value === 'string') out[bank] = { at: value, loginFailures: 0 };
+      else if (value && typeof value === 'object') out[bank] = value as RunRecord;
+    }
+    return out;
+  } catch { return {}; }
+}
+
+function writeLastRuns(runs: LastRuns) {
+  writeFileSync(LAST_RUN, JSON.stringify(runs, null, 2));
 }
 
 function assertRateLimit(bank: BankId) {
   const last = readLastRuns()[bank];
   if (!last) return;
-  const minutes = (Date.now() - new Date(last).getTime()) / 60_000;
-  if (minutes < MIN_MINUTES_BETWEEN_RUNS) {
-    const wait = Math.ceil(MIN_MINUTES_BETWEEN_RUNS - minutes);
+
+  // La guarda que importa: el banco bloquea al tercer intento fallido.
+  if (last.loginFailures >= MAX_CONSECUTIVE_LOGIN_FAILURES) {
     console.error(
-      `La última corrida de ${bank} fue hace ${Math.floor(minutes)} min. Espera ${wait} min.\n` +
-      `  Los bancos bloquean la cuenta tras logins repetidos, y no vale la pena el riesgo.`,
+      `${bank}: ${last.loginFailures} intentos de login fallidos seguidos.\n` +
+      `  El banco bloquea la clave al tercero, asi que este se detiene antes.\n` +
+      `  Entra por el sitio del banco a mano para confirmar que tu clave sigue buena;\n` +
+      `  despues borra collector/.last-run.json para reiniciar el contador.`,
+    );
+    process.exit(1);
+  }
+
+  const minutes = (Date.now() - new Date(last.at).getTime()) / 60_000;
+  if (minutes < MIN_MINUTES_BETWEEN_RUNS) {
+    console.error(
+      `La ultima corrida de ${bank} fue hace ${Math.floor(minutes)} min. ` +
+      `Espera ${Math.ceil(MIN_MINUTES_BETWEEN_RUNS - minutes)} min.`,
     );
     process.exit(1);
   }
 }
 
 function recordRun(bank: BankId) {
-  writeFileSync(LAST_RUN, JSON.stringify({ ...readLastRuns(), [bank]: new Date().toISOString() }, null, 2));
+  const runs = readLastRuns();
+  runs[bank] = { at: new Date().toISOString(), loginFailures: runs[bank]?.loginFailures ?? 0 };
+  writeLastRuns(runs);
+}
+
+/** Suma o reinicia el contador de fallos de login segun como termino la corrida. */
+function recordOutcome(bank: BankId, error: string | null) {
+  const runs = readLastRuns();
+  const previous = runs[bank]?.loginFailures ?? 0;
+  const failures = error && isLoginFailure(error) ? previous + 1 : 0;
+  runs[bank] = { at: runs[bank]?.at ?? new Date().toISOString(), loginFailures: failures };
+  writeLastRuns(runs);
+
+  if (failures > 0) {
+    console.log(`  (login fallido ${failures} de ${MAX_CONSECUTIVE_LOGIN_FAILURES + 1} antes del bloqueo del banco)`);
+  }
 }
 
 /**
@@ -309,7 +376,7 @@ function unrecordRun(bank: BankId, error: string) {
   if (!PRE_BANK_FAILURES.some(f => error.includes(f))) return;
   const runs = readLastRuns();
   delete runs[bank];
-  writeFileSync(LAST_RUN, JSON.stringify(runs, null, 2));
+  writeLastRuns(runs);
   console.log('  (el navegador nunca arrancó, así que esto no cuenta para el límite de 30 min)');
 }
 
@@ -611,6 +678,7 @@ async function main() {
     // El error del scraper puede envolver el objeto de opciones, que contiene la clave.
     const msg = redact(e instanceof Error ? e.message : String(e), secrets);
     console.error(`\nEl scraper falló: ${msg}`);
+    recordOutcome(bank, msg);
     unrecordRun(bank, msg);
     process.exit(1);
   }
@@ -620,11 +688,14 @@ async function main() {
   if (!result.success) {
     const failure = redact(result.error ?? 'sin detalle', secrets);
     console.error(`\nEl scrape no tuvo éxito: ${failure}`);
+    recordOutcome(bank, failure);
     unrecordRun(bank, failure);
     if (!confirm) process.exit(1);
     // Con --confirm se envía igual: registrar la corrida fallida es justamente lo que permite
     // que /gastos muestre "falló hace 2 horas" en vez de quedarse callado.
   } else {
+    // Login exitoso: el contador vuelve a cero.
+    recordOutcome(bank, null);
     printSummary(payload, secrets);
   }
 

@@ -622,12 +622,29 @@ El reporte es el libro mayor; el detalle sale de `GET /v1/payments/{SOURCE_ID}`,
 campos con `description`, `operation_type` y `payment_type_id` con texto. Son ~3 filas por dia,
 asi que una llamada por fila es perfectamente viable.
 
-### Frecuencia
+### Frecuencia: lo que bloquea una cuenta son los INTENTOS FALLIDOS
 
-El colector se niega a correr un banco cuya ultima corrida fue hace menos de 30 minutos, via
-`collector/.last-run.json` (ignorado por git). Los logins fallidos repetidos son lo que hace
-que un banco bloquee la cuenta, y un selector roto se le parece bastante desde su lado. Nunca
-agregar un cron para esto. **El colector jamas debe ejecutar una accion de escritura en el
+Banco de Chile bloquea la Clave Internet **al tercer intento fallido**, y Santander usa el mismo
+estandar de 3. Es un contador de contrasenas equivocadas, **no de frecuencia**: mandando siempre
+la clave correcta, ningun numero de corridas se acerca a ese umbral.
+
+La primera version de este colector esperaba 30 minutos entre corridas cualesquiera, citando el
+README de upstream, que lo afirma en prosa — sin fuente, con un "puede", y sin una sola linea de
+codigo que lo implemente. Hacia esperar por un riesgo inexistente y no cubria el real.
+
+Ahora hay dos guardas, en `collector/.last-run.json` (ignorado por git):
+
+- **Dos logins fallidos seguidos frenan ese banco.** Se corta en 2 para dejar el tercer intento
+  —el que bloquea— fuera del alcance de un selector roto. Un login exitoso reinicia el contador,
+  y un fallo previo al banco (Chrome ausente, por ejemplo) no cuenta.
+- **Cinco minutos entre corridas**, solo para atajar un bucle accidental.
+
+Ese minimo **no pretende evadir la deteccion de bots**. Santander corre Akamai Bot Manager
+(`_bm/` es ruta reservada de Akamai), BioCatch (`Biocatch/getScore`, los `wup-*`) y Dynatrace.
+Esas defensas puntuan la sesion por huella y comportamiento, no por cada cuanto corres, asi que
+esperar no cambia nada frente a ellas. Lo que si ayuda ahi es `--manual`.
+
+Nunca agregar un cron para esto. **El colector jamas debe ejecutar una accion de escritura en el
 banco** --- sin transferencias, sin pagos, solo lectura.
 
 ---
