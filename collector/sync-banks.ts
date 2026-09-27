@@ -262,6 +262,30 @@ function unrecordRun(bank: BankId, error: string) {
 
 const MASK_RE = /\*{2,4}\d{3,4}/;
 
+/**
+ * Los montos del banco llegan como STRING, aunque la interfaz del scraper los declare
+ * `number`: la cartola de Banco de Chile manda `"monto":"50000"` y `"saldo":"0"`.
+ * TypeScript no valida en runtime, así que el string viaja intacto hasta el payload y el zod
+ * de la ruta rechaza el lote entero con "expected number, received string".
+ *
+ * `Math.abs("50000")` funciona por coerción y por eso el monto sí salía bien, pero
+ * `Math.abs("1.234.567")` da NaN: el punto es separador de miles en Chile. Acá se normaliza
+ * explícitamente —punto = miles, coma = decimales— en vez de depender de la coerción.
+ *
+ * Devuelve null en vez de 0 ante algo no parseable: un 0 inventado se confunde con un monto
+ * real de cero, y en el caso del saldo sería un dato falso.
+ */
+function toNumber(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v !== 'string') return null;
+
+  const cleaned = v.trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+  if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
+
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
 const extractMask = (label?: string): string | null => label?.match(MASK_RE)?.[0] ?? null;
 
 function accountKind(label: string): 'checking' | 'savings' | 'line_of_credit' {
@@ -273,8 +297,10 @@ function accountKind(label: string): 'checking' | 'savings' | 'line_of_credit' {
 const movement = (m: BankMovement) => ({
   date: m.date,
   description: m.description,
-  amount: m.amount,
-  balance: m.balance ?? null,
+  // `?? 0` solo para el monto: si no se pudo leer, el movimiento existe y la ruta lo va a
+  // rechazar por el zod, que es lo correcto — mejor un lote rechazado que un monto inventado.
+  amount: toNumber(m.amount) ?? Number.NaN,
+  balance: toNumber(m.balance),
   source: m.source,
   owner: m.owner ?? null,
   card: extractMask(m.card ?? undefined),
@@ -289,7 +315,7 @@ function mapAccount(a: AccountBalance, win: { from: string; to: string; complete
     label,
     mask: extractMask(label),
     currency: 'CLP' as const,
-    balance: a.balance ?? null,
+    balance: toNumber(a.balance),
     window: win,
     movements: a.movements.map(movement),
   };
@@ -306,21 +332,21 @@ function mapCard(c: CreditCardBalance, win: { from: string; to: string; complete
     window: win,
     movements,
     credit: {
-      nationalUsed: c.national?.used ?? null,
-      nationalAvailable: c.national?.available ?? null,
-      nationalTotal: c.national?.total ?? null,
-      internationalUsed: c.international?.used ?? null,
-      internationalAvailable: c.international?.available ?? null,
-      internationalTotal: c.international?.total ?? null,
+      nationalUsed: toNumber(c.national?.used),
+      nationalAvailable: toNumber(c.national?.available),
+      nationalTotal: toNumber(c.national?.total),
+      internationalUsed: toNumber(c.international?.used),
+      internationalAvailable: toNumber(c.international?.available),
+      internationalTotal: toNumber(c.international?.total),
       internationalCurrency: (c.international?.currency as 'USD' | 'EUR' | undefined) ?? null,
       billingPeriod: c.billingPeriod ?? null,
       nextBillingDate: c.nextBillingDate ?? null,
       nextDueDate: c.nextDueDate ?? null,
-      periodExpenses: c.periodExpenses ?? null,
+      periodExpenses: toNumber(c.periodExpenses),
       statementBillingDate: c.lastStatement?.billingDate ?? null,
-      statementBilledAmount: c.lastStatement?.billedAmount ?? null,
+      statementBilledAmount: toNumber(c.lastStatement?.billedAmount),
       statementDueDate: c.lastStatement?.dueDate ?? null,
-      statementMinimum: c.lastStatement?.minimumPayment ?? null,
+      statementMinimum: toNumber(c.lastStatement?.minimumPayment),
     },
     // El banco entrega los no facturados como un listado completo en una sola llamada, así
     // que ese conjunto es autoritativo y habilita el reemplazo del anterior. Es lo que evita
@@ -340,17 +366,24 @@ function printSummary(payload: ReturnType<typeof buildPayload>, secrets: string[
       .map(m => m.date.replace(/^(\d{2})-(\d{2})-(\d{4})$/, '$3-$2-$1'))
       .sort();
     const range = dates.length ? `${dates[0]} … ${dates[dates.length - 1]}` : 'sin movimientos';
-    const total = a.movements.reduce((s, m) => s + m.amount, 0);
+    // El neto solo no dice nada: en una cuenta de paso, cargos y abonos se cancelan y da 0,
+    // que se confunde con "no se leyó ningún monto". Separados, la diferencia es obvia.
+    const cargos = a.movements.filter(m => m.amount < 0).reduce((s, m) => s + m.amount, 0);
+    const abonos = a.movements.filter(m => m.amount > 0).reduce((s, m) => s + m.amount, 0);
+    const total = cargos + abonos;
     // Un monto en cero casi nunca es real: es la señal de que el banco renombró un campo del
     // API y el parser lo leyó como ausente. Vale la pena que salte a la vista.
-    const zeros = a.movements.filter(m => !m.amount).length;
+    const zeros = a.movements.filter(m => !m.amount || Number.isNaN(m.amount)).length;
     console.log(
       `  ${a.kind.padEnd(14)} ${(a.mask ?? '—').padEnd(9)} ` +
       `${String(a.movements.length).padStart(4)} mov  ${range}`,
     );
     console.log(
-      `${' '.repeat(4)}saldo=${a.balance ?? '—'}  neto=${total.toFixed(0)}  ` +
-      `ventana=${a.window.from}..${a.window.to} complete=${a.window.complete}`,
+      `${' '.repeat(4)}saldo=${a.balance ?? '—'}  ` +
+      `cargos=${cargos.toFixed(0)}  abonos=${abonos.toFixed(0)}  neto=${total.toFixed(0)}`,
+    );
+    console.log(
+      `${' '.repeat(4)}ventana=${a.window.from}..${a.window.to} complete=${a.window.complete}`,
     );
     if (zeros) {
       console.log(`${' '.repeat(4)}⚠  ${zeros} de ${a.movements.length} movimientos con monto 0 — revisa con --debug`);
@@ -359,16 +392,51 @@ function printSummary(payload: ReturnType<typeof buildPayload>, secrets: string[
   }
 }
 
-function buildPayload(bank: BankId, result: ScrapeResult, win: { from: string; to: string; complete: boolean }) {
+const toIso = (ddmmyyyy: string) => ddmmyyyy.replace(/^(\d{2})-(\d{2})-(\d{4})$/, '$3-$2-$1');
+
+/**
+ * La ventana que cubre una cuenta, cuando no se pidió un rango explícito.
+ *
+ * El scraper de Banco de Chile no acepta fechas: pide la cartola y pagina hasta donde el banco
+ * le deje, así que el rango que realmente cubrió es el de los datos que trajo. Declarar una
+ * ventana fija de 30 días atrás era mentir en la dirección peligrosa: la primera corrida trajo
+ * movimientos desde el 13-08 con una ventana que empezaba el 27-08, y la ruta habría descartado
+ * doce días de historia real por caer "fuera de la ventana declarada".
+ *
+ * `complete` sigue en false salvo que se pase --complete: cubrir un rango no es lo mismo que
+ * haber agotado la paginación del banco, y solo lo segundo justifica reconciliar.
+ */
+function deriveWindow(
+  movements: Array<{ date: string }>,
+  requested: { from: string; to: string; complete: boolean },
+  explicit: boolean,
+): { from: string; to: string; complete: boolean } {
+  if (explicit || movements.length === 0) return requested;
+  const dates = movements.map(m => toIso(m.date)).sort();
+  return { from: dates[0], to: dates[dates.length - 1], complete: requested.complete };
+}
+
+function buildPayload(
+  bank: BankId,
+  result: ScrapeResult,
+  win: { from: string; to: string; complete: boolean },
+  explicit: boolean,
+) {
+  const accounts = (result.accounts ?? []).map(a => {
+    const mapped = mapAccount(a, win);
+    return { ...mapped, window: deriveWindow(mapped.movements, win, explicit) };
+  });
+  const cards = (result.creditCards ?? []).map(c => {
+    const mapped = mapCard(c, win);
+    return { ...mapped, window: deriveWindow(mapped.movements, win, explicit) };
+  });
+
   return {
     bank,
     scrapedAt: new Date().toISOString(),
     success: result.success,
     error: result.error ?? null,
-    accounts: [
-      ...(result.accounts ?? []).map(a => mapAccount(a, win)),
-      ...(result.creditCards ?? []).map(c => mapCard(c, win)),
-    ],
+    accounts: [...accounts, ...cards],
   };
 }
 
@@ -383,6 +451,7 @@ async function main() {
   }
 
   const today = todayInSantiago();
+  const explicitRange = getArg('from') !== undefined || getArg('to') !== undefined;
   const to = getArg('to') ?? today;
   const from = getArg('from') ?? daysAgo(to, 30);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
@@ -443,7 +512,7 @@ async function main() {
     process.exit(1);
   }
 
-  const payload = buildPayload(bank, result, win);
+  const payload = buildPayload(bank, result, win, explicitRange);
 
   if (!result.success) {
     const failure = redact(result.error ?? 'sin detalle', secrets);
