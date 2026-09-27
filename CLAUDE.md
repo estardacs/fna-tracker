@@ -558,6 +558,31 @@ upstream; el issue #27 de kaihv/open-banking-chile lo pide y sigue abierto) o de
 Ventaja si resulta: MercadoPago no necesita navegador ni clave dinamica, asi que es el unico de
 los tres que podria correr desatendido en la nube sin guardar una clave bancaria.
 
+### Resultado de la sonda (2026-09-27): sirve, en dos pasos
+
+86 filas en 30 dias, tipos SETTLEMENT (61), CASHBACK (20), PAYOUTS (5), con **$988.043 en
+montos negativos** — o sea el reporte SI trae plata saliendo, que era la duda.
+
+Detalles que costaron varias iteraciones y conviene no volver a descubrir:
+
+- `POST /config` exige `columns` y `frequency`; sin config, `POST /settlement_report` responde
+  404 y el error no lo explica. Declarar `frequency` NO activa la generacion automatica.
+- Columnas validas comprobadas una por una: `TRANSACTION_DATE`, `SOURCE_ID`,
+  `EXTERNAL_REFERENCE`, `TRANSACTION_TYPE`, `TRANSACTION_AMOUNT`, `TRANSACTION_CURRENCY`,
+  `SETTLEMENT_NET_AMOUNT`, `DESCRIPTION`, `PAYMENT_METHOD`, `PAYMENT_METHOD_TYPE`,
+  `SETTLEMENT_DATE`, `ORDER_ID`, `SITE`, `METADATA`, `USER_ID`, `FEE_AMOUNT`, `REAL_AMOUNT`,
+  `MONEY_RELEASE_DATE`. Rechazadas: `REASON`, `STATUS`, `PAYER_ID`, `COLLECTOR_ID`,
+  `OPERATION_TYPE`, `DATE`. Un `key` invalido da 400 con `cause: []`, sin decir cual.
+- `GET /list` acumula reportes de corridas anteriores y `file_name` llega **vacio** mientras
+  `status` es `pending`. Hay que elegir por `date_created` posterior al pedido, no el ultimo del
+  arreglo, o se descarga uno viejo con otras columnas. Tarda entre 6 s y mas de 1 min.
+- **`DESCRIPTION` viene vacia en todas las filas.** La columna existe y MercadoPago no la llena,
+  asi que el reporte solo no alcanza para gastos: una fila es "SETTLEMENT -12990" sin comercio.
+
+El reporte es el libro mayor; el detalle sale de `GET /v1/payments/{SOURCE_ID}`, que devuelve 64
+campos con `description`, `operation_type` y `payment_type_id` con texto. Son ~3 filas por dia,
+asi que una llamada por fila es perfectamente viable.
+
 ### Frecuencia
 
 El colector se niega a correr un banco cuya ultima corrida fue hace menos de 30 minutos, via

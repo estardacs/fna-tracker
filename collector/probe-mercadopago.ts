@@ -45,6 +45,15 @@ loadEnv();
 const args = process.argv.slice(2);
 const days = Number(args.find(a => a.startsWith('--days='))?.slice(7) ?? 30);
 
+/** Candidatas: las del CSV de ejemplo de la documentación más algunas plausibles para gasto. */
+const COLUMNS = (process.env.MP_COLUMNS ?? [
+  'TRANSACTION_DATE', 'SOURCE_ID', 'EXTERNAL_REFERENCE', 'TRANSACTION_TYPE',
+  'TRANSACTION_AMOUNT', 'TRANSACTION_CURRENCY', 'SETTLEMENT_NET_AMOUNT',
+  'DESCRIPTION', 'PAYMENT_METHOD', 'PAYMENT_METHOD_TYPE', 'SETTLEMENT_DATE',
+  'ORDER_ID', 'SITE', 'METADATA', 'USER_ID', 'FEE_AMOUNT', 'REAL_AMOUNT',
+  'MONEY_RELEASE_DATE',
+].join(',')).split(',');
+
 const token = process.env.MP_ACCESS_TOKEN;
 if (!token) {
   console.error('Falta MP_ACCESS_TOKEN en .env.local.');
@@ -91,8 +100,34 @@ async function main() {
 
   console.log(`Sondeando MercadoPago, últimos ${days} días (${iso(begin)} … ${iso(end)})\n`);
 
-  // 1. La configuración dice si la cuenta tiene el reporte habilitado.
-  const cfg = await mp('/v1/account/settlement_report/config');
+  // 1. La configuración. Una cuenta que nunca generó un reporte no la tiene, y sin ella el
+  //    POST del reporte también responde 404 — el segundo error es consecuencia del primero.
+  let cfg = await mp('/v1/account/settlement_report/config');
+  {
+    const exists = cfg.ok;
+    console.log(`1. config → ${exists ? 'existe, actualizando columnas' : 'no existe, creándola'}`);
+    const created = await mp('/v1/account/settlement_report/config', {
+      method: exists ? 'PUT' : 'POST',
+      body: JSON.stringify({
+        file_name_prefix: 'fna-tracker',
+        // Los retiros son plata saliendo: sin esto el reporte omitiría justo parte del gasto.
+        include_withdraw: true,
+        display_timezone: 'GMT-03',
+        header_language: 'es',
+        // La API los exige. Las claves salen del CSV de ejemplo de la documentación; si alguna
+        // no existe, el 400 la nombra y se ajusta.
+        // Sin una columna descriptiva, una fila es "SETTLEMENT -12990" sin comercio, inútil
+        // como registro de gasto. Se piden todas las candidatas del CSV de ejemplo más algunas
+        // plausibles: si alguna no existe, el 400 la nombra y se descarta.
+        columns: COLUMNS.map((key) => ({ key })),
+        // Obligatorio, pero declararlo NO activa la generación automática: eso se prende
+        // aparte con POST /schedule, que no tocamos.
+        frequency: { hour: 0, type: 'monthly', value: 1 },
+      }),
+    });
+    console.log(`   ${exists ? 'actualizar' : 'crear'} config → ${created.ok || created.status === 201 ? `${created.status} ok` : await explain(created)}`);
+    cfg = await mp('/v1/account/settlement_report/config');
+  }
   console.log(`1. config → ${cfg.ok ? 'ok' : await explain(cfg)}`);
   if (cfg.ok) {
     const json = await cfg.json().catch(() => null) as Record<string, unknown> | null;
@@ -100,28 +135,51 @@ async function main() {
   }
 
   // 2. Pedir el reporte. Es asíncrono: 202 significa aceptado, no listo.
+  // Se recuerda el instante del pedido: la lista acumula reportes de corridas anteriores, y
+  // tomar el último del arreglo devolvía uno viejo, generado con otras columnas.
+  const postedAt = Date.now();
   const create = await mp('/v1/account/settlement_report', {
     method: 'POST',
     body: JSON.stringify({ begin_date: iso(begin), end_date: iso(end) }),
   });
   console.log(`2. crear → ${create.status === 202 ? '202 aceptado' : await explain(create)}`);
+  if (create.status === 404) {
+    console.log('   404 acá suele significar que la cuenta no tiene el reporte habilitado.');
+  }
   if (create.status === 203) {
     console.log('   203: la llamada estaba bien formada pero el reporte no se creó. Reintentar.');
   }
 
   // 3. Esperar a que aparezca en la lista. Sin sleep en bucle cerrado: 5 intentos espaciados.
   let fileName: string | null = null;
-  for (let attempt = 1; attempt <= 10; attempt++) {
+  for (let attempt = 1; attempt <= 40; attempt++) {
     await new Promise(r => setTimeout(r, 6000));
     const list = await mp('/v1/account/settlement_report/list');
     if (!list.ok) { console.log(`3. lista → ${await explain(list)}`); break; }
     const items = await list.json().catch(() => []) as Array<{ file_name?: string; begin_date?: string }>;
     if (Array.isArray(items) && items.length > 0) {
-      fileName = items[items.length - 1]?.file_name ?? items[0]?.file_name ?? null;
-      console.log(`3. lista → ${items.length} reporte(s), usando el más reciente`);
-      break;
+      // `file_name` existe como clave desde el principio pero llega vacío mientras el reporte
+      // se genera: la señal de que está listo es que tenga valor, no que el item exista.
+      // El más reciente POR FECHA DE CREACIÓN, y solo si es posterior al pedido.
+      const fresh = (items as Array<Record<string, unknown>>)
+        .filter(i => {
+          const t = Date.parse(String(i.date_created ?? ''));
+          return Number.isFinite(t) && t >= postedAt - 120_000;
+        })
+        .sort((a, b) => Date.parse(String(a.date_created)) - Date.parse(String(b.date_created)));
+
+      const last = (fresh[fresh.length - 1] ?? {}) as Record<string, unknown>;
+      const name = typeof last.file_name === 'string' && last.file_name ? last.file_name : null;
+      const status = String(last.status ?? 'sin reporte nuevo aún');
+
+      if (name) {
+        fileName = name;
+        console.log(`3. lista → listo tras ${attempt * 6}s (status=${status})`);
+        break;
+      }
+      console.log(`   intento ${attempt}: ${items.length} reporte(s), status=${status}, aún sin archivo`);
     }
-    if (attempt === 10) console.log('3. lista → vacía después de 60s');
+    if (attempt === 40) console.log("3. lista → vacía después de 4 min");
   }
   if (!fileName) { console.log('\nSin archivo que descargar. La sonda termina acá.'); return; }
 
@@ -154,6 +212,41 @@ async function main() {
     const dates = rows.map(r => r[idxDate]).filter(Boolean).sort();
     console.log(`\n   rango: ${dates[0]} … ${dates[dates.length - 1]}`);
   }
+  // Sin descripción una fila es "SETTLEMENT -12990" sin comercio. Se mide CUÁNTAS la traen y
+  // cuántas distintas hay; el contenido no se imprime.
+  const idxDesc = col('DESCRIPTION');
+  if (idxDesc >= 0) {
+    const conTexto = rows.filter(r => (r[idxDesc] ?? '').trim() !== '');
+    const distintas = new Set(conTexto.map(r => r[idxDesc])).size;
+    console.log(`\n   DESCRIPTION: ${conTexto.length}/${rows.length} filas con texto, ${distintas} valores distintos`);
+  } else {
+    console.log('\n   DESCRIPTION: la columna no vino en el CSV');
+  }
+
+  // Si el reporte no describe, queda pedir el detalle del pago por SOURCE_ID. Esta comprobación
+  // usa UNA fila y reporta qué campos trae y cuáles vienen con texto — nunca el contenido.
+  const idxSource = col('SOURCE_ID');
+  if (idxDesc >= 0 && idxSource >= 0) {
+    const sinTexto = rows.every(r => (r[idxDesc] ?? '').trim() === '');
+    const sample = rows.find(r => (r[idxSource] ?? '').trim() !== '')?.[idxSource];
+    if (sinTexto && sample) {
+      const det = await mp(`/v1/payments/${sample}`);
+      if (!det.ok) {
+        console.log(`\n   /v1/payments/{id} → ${await explain(det)}`);
+      } else {
+        const pago = await det.json().catch(() => null) as Record<string, unknown> | null;
+        if (pago) {
+          const conTexto = ['description', 'statement_descriptor', 'operation_type', 'payment_type_id']
+            .filter(k => typeof pago[k] === 'string' && (pago[k] as string).trim() !== '');
+          console.log(`\n   /v1/payments/{id} → ok, ${Object.keys(pago).length} campos`);
+          console.log(`   campos con texto útil: ${conTexto.join(', ') || 'ninguno de los esperados'}`);
+          const ordenNombre = (pago.order as Record<string, unknown> | undefined)?.id ? 'sí' : 'no';
+          console.log(`   trae objeto order: ${ordenNombre}`);
+        }
+      }
+    }
+  }
+
   if (idxAmount >= 0) {
     const nums = rows.map(r => Number(String(r[idxAmount]).replace(',', '.'))).filter(n => Number.isFinite(n));
     const neg = nums.filter(n => n < 0).reduce((s, n) => s + n, 0);
