@@ -64,7 +64,7 @@ cualquier plan de correr esto desatendido.
 
 ## Cambios respecto a upstream
 
-Siete, todos marcados en el propio archivo:
+Ocho, todos marcados en el propio archivo:
 
 - **`src/infrastructure/browser.ts` — el sandbox de Chrome queda encendido.** Upstream pone
   `--no-sandbox` y `--disable-setuid-sandbox` fijos en `DEFAULT_ARGS`. Acá son opt-in con
@@ -165,6 +165,20 @@ Siete, todos marcados en el propio archivo:
   escala se decide **por la forma del string**, no por suposición: `1.234.567` son miles,
   `18990.00` es decimal, `18.990,50` es coma decimal. Un signo negativo en el propio valor manda
   sobre el indicador `creditDebitIndicator`, porque es el banco diciéndolo explícitamente.
+
+- **`ScraperOptions.onPause` y `src/banks/santander.ts` — modo manual.** Cuando `onPause` está
+  presente, el scraper inicia sesión y entrega el navegador: la persona navega a Movimientos a
+  mano y el interceptor captura la misma respuesta que el banco devolvería igual.
+
+  Existe porque en un scraper lo primero que envejece son los **selectores de navegación**, no
+  los endpoints. Santander lo demostró: el endpoint de transacciones responde perfecto, pero
+  `navigateToMovements` a veces llega al dashboard y a veces termina en una página promocional
+  de la app. Adivinar selectores a ciegas cuesta un login por intento contra un banco que corre
+  biometría de comportamiento; un humano encuentra "Movimientos" a la primera.
+
+  Se usa con `npm run sync-banks -- --bank=santander --manual --debug`, que implica ventana
+  visible. También es la forma práctica de capturar el cuerpo del POST de transacciones, que es
+  lo que permitiría después llamar al endpoint directo con el rango de fechas que uno quiera.
 
 ### Lo que el banco mide de vuelta
 

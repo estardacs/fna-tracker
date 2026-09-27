@@ -131,6 +131,15 @@ export interface ScraperOptions extends BankCredentials {
   onProgress?: (step: string) => void;
   /** Callback invocado en cada línea de debug en tiempo real */
   onDebug?: (line: string) => void;
+  /**
+   * CAMBIO RESPECTO A UPSTREAM — modo manual.
+   *
+   * Si está presente, el scraper inicia sesión y entrega el navegador: la promesa se resuelve
+   * cuando la persona terminó de navegar a mano. Existe porque los selectores de navegación
+   * envejecen mucho más rápido que los endpoints, y un humano encuentra "Movimientos" sin
+   * problema mientras el interceptor captura exactamente la misma respuesta del banco.
+   */
+  onPause?: (message: string) => Promise<void>;
 }
 
 /** Interfaz que debe implementar cada banco */

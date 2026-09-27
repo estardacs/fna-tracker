@@ -617,9 +617,21 @@ async function scrapeSantander(
   await closePopups(page);
 
   // 7. Navigate to movements
-  debugLog.push("7. Navigating to movements...");
-  progress("Extrayendo movimientos de cuenta...");
-  await navigateToMovements(page, debugLog);
+  //
+  // En modo manual no se navega: los selectores del portal envejecen mucho más rápido que sus
+  // endpoints, así que se le entrega el navegador a la persona y el interceptor captura la
+  // misma respuesta que el banco devolvería de todos modos.
+  if (options.onPause) {
+    debugLog.push("7. Modo manual: esperando navegación humana...");
+    await options.onPause(
+      'Navega a Movimientos en la ventana de Chrome y deja los movimientos a la vista.',
+    );
+    debugLog.push("   navegación manual terminada");
+  } else {
+    debugLog.push("7. Navigating to movements...");
+    progress("Extrayendo movimientos de cuenta...");
+    await navigateToMovements(page, debugLog);
+  }
   await delay(4000);
   await doSave(page, "04-movements");
 

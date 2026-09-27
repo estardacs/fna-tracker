@@ -99,7 +99,7 @@ const getArg = (name: string): string | undefined => {
  * throttle, y terminaba en un dry run que parecía una corrida normal. Con una bandera de por
  * medio entre "no escribir nada" y "escribir en la base", adivinar la intención no corresponde.
  */
-const KNOWN_FLAGS = ['--complete', '--confirm', '--headful', '--screenshots', '--debug'];
+const KNOWN_FLAGS = ['--complete', '--confirm', '--headful', '--screenshots', '--debug', '--manual'];
 const KNOWN_OPTS = ['--bank', '--from', '--to', '--chrome'];
 
 function assertKnownArgs() {
@@ -133,6 +133,13 @@ const headful = args.includes('--headful');
 const screenshots = args.includes('--screenshots');
 const complete = args.includes('--complete');
 const debug = args.includes('--debug');
+/**
+ * Navegación a mano. El scraper inicia sesión y te entrega el navegador; tú llegas a la pantalla
+ * de movimientos y el interceptor captura la respuesta del banco. Sirve cuando los selectores
+ * del portal están desactualizados —que es lo primero que envejece en un scraper— pero sus
+ * endpoints siguen funcionando. Implica ventana visible, obviamente.
+ */
+const manual = args.includes('--manual');
 
 // ─── Fechas, sin dependencias ────────────────────────────────────────────────────────
 
@@ -536,6 +543,7 @@ async function main() {
   if (!SCRAPERS[bank]) {
     console.error(`Uso: --bank=<${Object.keys(SCRAPERS).join('|')}> [--from=yyyy-MM-dd] [--to=yyyy-MM-dd]`);
     console.error('     [--complete] [--confirm] [--headful] [--screenshots] [--debug]');
+    console.error('     [--manual]  inicia sesión y te entrega el navegador para navegar tú');
     process.exit(1);
   }
 
@@ -590,8 +598,14 @@ async function main() {
       password,
       chromePath: getArg('chrome') ?? process.env.CHROME_PATH,
       saveScreenshots: screenshots,
-      headful,
+      headful: headful || manual,
       onProgress: step => console.log(`  ${redact(step, secrets)}`),
+      ...(manual ? {
+        onPause: async (message: string) => {
+          console.log(`\n  ${message}`);
+          await ask('  Cuando estés listo, presiona Enter: ', false);
+        },
+      } : {}),
     });
   } catch (e) {
     // El error del scraper puede envolver el objeto de opciones, que contiene la clave.

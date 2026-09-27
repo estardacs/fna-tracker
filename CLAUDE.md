@@ -500,6 +500,24 @@ numero completo de tarjeta (las CHECK de `mask` y `card` hacen fallar el insert 
 regresiona y lo emite), y los screenshots del scraper, que traen saldos y el nombre del
 titular como pixeles. `bank_sync_runs.error` pasa por `sanitizeError()`.
 
+### Modo manual: cuando los selectores envejecen
+
+```bash
+npm run sync-banks -- --bank=santander --manual --debug
+```
+
+El scraper inicia sesion y **te entrega el navegador**: navegas a Movimientos a mano, presionas
+Enter, y el interceptor captura la misma respuesta del banco. Implica ventana visible.
+
+En un scraper lo primero que envejece son los selectores de navegacion, no los endpoints.
+Santander lo demostro: su endpoint de transacciones responde perfecto, pero `navigateToMovements`
+a veces llega al dashboard y a veces termina en una pagina promocional de la app. Adivinar
+selectores a ciegas cuesta un login por intento contra un banco que corre biometria de
+comportamiento. Un humano encuentra "Movimientos" a la primera.
+
+Es ademas la forma practica de capturar el cuerpo del POST de transacciones, que es lo que
+permitiria despues llamar al endpoint directo con el rango de fechas que uno quiera.
+
 ### Estado por banco
 
 | banco | login | cuenta | saldo | tarjeta |
