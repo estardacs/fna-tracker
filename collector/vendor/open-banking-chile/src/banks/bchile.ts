@@ -213,7 +213,12 @@ function facturadoToMovement(tx: ApiTransaccionFacturada, source: MovementSource
   return { date: normalizeDate(tx.fechaTransaccionString), description: tx.descripcion.trim(), amount: tx.grupo === "pagos" ? Math.abs(tx.montoTransaccion) : -Math.abs(tx.montoTransaccion), balance: 0, source, card: cardMask, installments: normalizeInstallments(tx.cuotas) };
 }
 
-async function fetchAccountMovements(page: Page, products: ApiProduct[], fullName: string, rut: string, debugLog: string[]): Promise<{ movements: BankMovement[]; balance?: number }> {
+// CAMBIO RESPECTO A UPSTREAM — ver ../../UPSTREAM.md
+// Se agregan `label` y `mask` al retorno. Upstream los tiene a mano en el producto
+// (`descripcionLogo`, `mascara`) pero arma `accounts: [{ balance, movements }]` sin ellos, así
+// que la cuenta llega sin nombre ni máscara y la identidad tiene que derivarse de un label
+// inventado. Con la máscara, la identidad es estable aunque el banco renombre la cuenta.
+async function fetchAccountMovements(page: Page, products: ApiProduct[], fullName: string, rut: string, debugLog: string[]): Promise<{ movements: BankMovement[]; balance?: number; label?: string; mask?: string }> {
   const accounts = products.filter(p => p.tipo === "cuenta" || p.tipo === "cuentaCorrienteMonedaLocal");
   const seenNums = new Set<string>();
   const unique = accounts.filter(a => { if (seenNums.has(a.numero)) return false; seenNums.add(a.numero); return true; });
@@ -225,9 +230,14 @@ async function fetchAccountMovements(page: Page, products: ApiProduct[], fullNam
 
   const movements: BankMovement[] = [];
   let balance: number | undefined;
+  let label: string | undefined;
+  let mask: string | undefined;
 
   for (const acct of unique) {
     debugLog.push(`  Fetching ${acct.descripcionLogo} ${acct.mascara}`);
+    // Upstream colapsa todas las cuentas en una sola entrada, así que se toma la primera.
+    label ??= [acct.descripcionLogo, acct.mascara].filter(Boolean).join(' ').trim() || acct.label;
+    mask ??= acct.mascara;
     const cuentaSeleccionada = { nombreCliente: fullName, rutCliente: rut, numero: acct.numero, mascara: acct.mascara, selected: true, codigoProducto: acct.codigo, claseCuenta: acct.claseCuenta, moneda: acct.codigoMoneda };
 
     try {
@@ -235,6 +245,14 @@ async function fetchAccountMovements(page: Page, products: ApiProduct[], fullNam
       const cartola = await apiPost<ApiCartolaResponse>(page, "bff-pper-prd-cta-movimientos/movimientos/getCartola", { cuentaSeleccionada, cabecera: { statusGenerico: true, paginacionDesde: 1 } });
 
       if (cartola.movimientos) {
+        // DIAGNÓSTICO (cambio respecto a upstream). ApiCartolaMov es la suposición del autor
+        // sobre la forma del API, y si el banco renombra un campo el monto sale 0 en silencio.
+        // Registrar las claves reales y un objeto de muestra convierte eso en algo visible.
+        // Solo llega al usuario con --debug.
+        if (cartola.movimientos.length > 0) {
+          debugLog.push(`    keys de la cartola: ${Object.keys(cartola.movimientos[0]).join(', ')}`);
+          debugLog.push(`    muestra cruda: ${JSON.stringify(cartola.movimientos[0])}`);
+        }
         for (const mov of cartola.movimientos) movements.push(cartolaMovToMovement(mov));
         if (balance === undefined && acct.codigoMoneda === "CLP" && cartola.movimientos.length > 0) balance = cartola.movimientos[0].saldo;
 
@@ -253,7 +271,7 @@ async function fetchAccountMovements(page: Page, products: ApiProduct[], fullNam
     } catch (err) { debugLog.push(`    → Error: ${err instanceof Error ? err.message : String(err)}`); }
   }
 
-  return { movements, balance };
+  return { movements, balance, label, mask };
 }
 
 async function fetchCreditCardData(page: Page, fullName: string, debugLog: string[]): Promise<{ movements: BankMovement[]; creditCards: CreditCardBalance[] }> {
@@ -446,7 +464,7 @@ async function scrapeBchile(session: BrowserSession, options: ScraperOptions): P
   return {
     success: true,
     bank,
-    accounts: [{ balance, movements: deduplicateMovements(acctResult.movements) }],
+    accounts: [{ label: acctResult.label, balance, movements: deduplicateMovements(acctResult.movements) }],
     creditCards: tcResult.creditCards.length > 0 ? tcResult.creditCards : undefined,
     screenshot: ss,
     debug: debugLog.join("\n"),

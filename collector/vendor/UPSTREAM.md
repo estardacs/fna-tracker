@@ -50,7 +50,7 @@ src/banks/bchile.ts
 
 ## Cambios respecto a upstream
 
-Dos, ambos marcados en el propio archivo:
+Tres, todos marcados en el propio archivo:
 
 - **`src/infrastructure/browser.ts` — el sandbox de Chrome queda encendido.** Upstream pone
   `--no-sandbox` y `--disable-setuid-sandbox` fijos en `DEFAULT_ARGS`. Acá son opt-in con
@@ -63,6 +63,21 @@ Dos, ambos marcados en el propio archivo:
   `PROGRAMFILES(X86)` y `LOCALAPPDATA` en vez de un `C:` fijo. El mensaje de error de
   `browser.ts` también menciona la ruta de Windows y `--chrome=<ruta>`. Vale la pena
   ofrecerlo upstream.
+
+- **`src/banks/bchile.ts` — la cuenta llega con nombre y máscara, y la cartola se puede
+  diagnosticar.** Upstream arma `accounts: [{ balance, movements }]`, sin `label`, aunque tiene
+  `descripcionLogo` y `mascara` a mano en el producto. Sin máscara la identidad de la cuenta
+  tiene que derivarse de un label inventado, y dejaría de ser estable si el banco la renombra.
+  `fetchAccountMovements` ahora los devuelve y el resultado los incluye.
+
+  Se agregan además dos líneas al debug log con las claves reales y un objeto de muestra de la
+  cartola. `ApiCartolaMov` es la suposición del autor sobre la forma del API del banco, así que
+  si el banco renombra un campo, `monto` se lee como ausente y **el monto sale 0 en silencio**
+  — que es exactamente lo que pasó en la primera corrida real: 35 movimientos, neto 0. Esas dos
+  líneas convierten eso en algo visible. Solo llegan al usuario con `--debug`.
+
+  Ojo: upstream colapsa todas las cuentas corrientes en una sola entrada de `accounts`, así que
+  se toma el label de la primera. Con más de una cuenta habría que rehacer esa parte.
 
 ## Revisión de seguridad — 2026-09-26
 

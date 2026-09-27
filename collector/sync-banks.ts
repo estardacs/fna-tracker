@@ -80,6 +80,7 @@ const confirm = args.includes('--confirm');
 const headful = args.includes('--headful');
 const screenshots = args.includes('--screenshots');
 const complete = args.includes('--complete');
+const debug = args.includes('--debug');
 
 // ─── Fechas, sin dependencias ────────────────────────────────────────────────────────
 
@@ -333,9 +334,16 @@ function mapCard(c: CreditCardBalance, win: { from: string; to: string; complete
 function printSummary(payload: ReturnType<typeof buildPayload>, secrets: string[]) {
   console.log(`\nBanco: ${payload.bank}   cuentas: ${payload.accounts.length}`);
   for (const a of payload.accounts) {
-    const dates = a.movements.map(m => m.date).sort();
+    // dd-mm-yyyy ordenado como texto da un rango sin sentido ("01-09 … 31-08"), porque compara
+    // el día antes del mes. Se ordena por la forma ISO.
+    const dates = a.movements
+      .map(m => m.date.replace(/^(\d{2})-(\d{2})-(\d{4})$/, '$3-$2-$1'))
+      .sort();
     const range = dates.length ? `${dates[0]} … ${dates[dates.length - 1]}` : 'sin movimientos';
     const total = a.movements.reduce((s, m) => s + m.amount, 0);
+    // Un monto en cero casi nunca es real: es la señal de que el banco renombró un campo del
+    // API y el parser lo leyó como ausente. Vale la pena que salte a la vista.
+    const zeros = a.movements.filter(m => !m.amount).length;
     console.log(
       `  ${a.kind.padEnd(14)} ${(a.mask ?? '—').padEnd(9)} ` +
       `${String(a.movements.length).padStart(4)} mov  ${range}`,
@@ -344,6 +352,9 @@ function printSummary(payload: ReturnType<typeof buildPayload>, secrets: string[
       `${' '.repeat(4)}saldo=${a.balance ?? '—'}  neto=${total.toFixed(0)}  ` +
       `ventana=${a.window.from}..${a.window.to} complete=${a.window.complete}`,
     );
+    if (zeros) {
+      console.log(`${' '.repeat(4)}⚠  ${zeros} de ${a.movements.length} movimientos con monto 0 — revisa con --debug`);
+    }
     console.log(`${' '.repeat(4)}${redact(a.label, secrets)}`);
   }
 }
@@ -367,7 +378,7 @@ async function main() {
   const bank = (getArg('bank') ?? '') as BankId;
   if (!SCRAPERS[bank]) {
     console.error(`Uso: --bank=<${Object.keys(SCRAPERS).join('|')}> [--from=yyyy-MM-dd] [--to=yyyy-MM-dd]`);
-    console.error('     [--complete] [--confirm] [--headful] [--screenshots]');
+    console.error('     [--complete] [--confirm] [--headful] [--screenshots] [--debug]');
     process.exit(1);
   }
 
@@ -443,6 +454,13 @@ async function main() {
     // que /gastos muestre "falló hace 2 horas" en vez de quedarse callado.
   } else {
     printSummary(payload, secrets);
+  }
+
+  if (debug && result.debug) {
+    // Redactado, pero igual puede contener descripciones de movimientos y saldos: es para
+    // mirar en pantalla, no para pegar en ninguna parte.
+    console.log('\n─── debug del scraper ───');
+    console.log(redact(result.debug, secrets));
   }
 
   if (!confirm) {

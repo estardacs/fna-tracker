@@ -437,7 +437,12 @@ fallaria.
 npm run sync-banks -- --bank=bchile                        # dry run: no envia nada
 npm run sync-banks -- --bank=bchile --confirm
 npm run sync-banks -- --bank=bchile --complete --confirm   # habilita reconciliacion
+npm run sync-banks -- --bank=bchile --debug                # log del scraper, redactado
 ```
+
+El resumen del dry run avisa cuantos movimientos traen monto 0. Casi nunca es real: es la
+senal de que el banco renombro un campo de su API y el parser lo leyo como ausente. `--debug`
+imprime las claves reales de la respuesta y un objeto de muestra para ubicar el campo nuevo.
 
 Pide RUT y clave por stdin en cada ejecucion y **no las guarda en ninguna parte**. No es
 incomodidad gratuita: la clave dinamica ya obliga a que haya un humano presente, asi que
