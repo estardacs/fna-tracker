@@ -505,8 +505,17 @@ titular como pixeles. `bank_sync_runs.error` pasa por `sanitizeError()`.
 | banco | login | cuenta | saldo | tarjeta |
 |---|---|---|---|---|
 | `bchile` | ok, **sin clave dinamica** | ok (35 mov, fechas correctas) | fallback agregado; el 0 anterior era falso | sin tarjeta en esta cuenta |
-| `edwards` | ok | ok (20 mov, neto plausible) | ok ($50.000) | pestanas no encontradas, 0 extraido |
+| `edwards` | ok | ok (20 mov) pero **desactivado** | ok ($50.000) | pestanas no encontradas |
 | `santander` | ok, sin clave dinamica en la primera corrida | **roto**: 0 mov en las 3 cuentas, por API y por HTML | ok ($60.146) | **roto**: pestanas no encontradas |
+
+**Edwards esta vendorizado pero NO registrado en `SCRAPERS`.** Es una marca de Banco de Chile y,
+en esta cuenta, el mismo producto: `bchile` reporta "Found 1 products" y Edwards muestra una sola
+cuenta. Como para el esquema son bancos distintos, sus `external_key` difieren, asi que correr los
+dos crearia DOS cuentas con los mismos movimientos duplicados y nada los deduplicaria. `bchile`
+domina de todos modos: 35 movimientos desde el 13-08 contra 20 desde el 01-09, y entrega la
+mascara real que Edwards no da. En la UI, `edwards` se muestra como "Banco de Chile".
+
+De paso, el saldo de $50.000 que leyo Edwards confirmo que el 0 de `bchile` era falso.
 
 Tres cosas que upstream hace mal en los tres bancos y que estan parcheadas en la copia (ver
 `collector/vendor/UPSTREAM.md`): no entrega `label` de cuenta, junta los movimientos de tarjeta

@@ -195,16 +195,22 @@ export function normalizeGenericApiMovements(
   return movements;
 }
 
+/** Filas que el normalizador legado descartó por monto cero o ilegible en la última pasada. */
+export let skippedZeroAmount = 0;
+
 export function normalizeSantanderCheckingApiMovements(captures: unknown[]): BankMovement[] {
+  skippedZeroAmount = 0;
   const movements: BankMovement[] = [];
   for (const capture of captures) {
     const obj = capture as { movements?: SantanderCheckingApiMovement[] };
     const list = obj?.movements;
     if (!Array.isArray(list)) continue;
     for (const m of list) {
-      const digits = m.movementAmount.replace(/[^0-9]/g, "");
+      const digits = String(m.movementAmount ?? "").replace(/[^0-9]/g, "");
       const raw = parseInt(digits, 10);
-      if (!raw || isNaN(raw)) continue;
+      // CAMBIO RESPECTO A UPSTREAM: contar los descartes. Un `continue` silencioso convierte
+      // "la respuesta venía vacía" en "no hay movimientos", que son cosas muy distintas.
+      if (!raw || isNaN(raw)) { skippedZeroAmount++; continue; }
       const clp = raw / 100;
       const isDebit = m.chargePaymentFlag === "D" || m.movementAmount.endsWith("-");
       const amount = isDebit ? -clp : clp;
@@ -494,11 +500,24 @@ async function scrapeSantander(
   // cuerpos, sin query strings, sin cabeceras: nada de esto lleva datos financieros ni
   // credenciales, solo la forma del API. Se ve únicamente con --debug.
   const seenEndpoints = new Set<string>();
+  let lastTransactionsRequestBody: unknown = null;
+
   page.on("request", (req) => {
     try {
       const u = new URL(req.url());
       if (!u.hostname.endsWith("santander.cl")) return;
       seenEndpoints.add(`${req.method()} ${u.hostname}${u.pathname}`);
+
+      // Se guarda el cuerpo del POST de movimientos para poder describir su FORMA. Saber qué
+      // campos espera es lo que permite llamar al endpoint directamente con el rango de fechas
+      // que uno quiere, en vez de depender de que la UI lance la consulta sola.
+      if (req.method() === "POST" && req.url().startsWith(SANTANDER_CHECKING_API_PREFIX)) {
+        const raw = req.postData();
+        if (raw) {
+          try { lastTransactionsRequestBody = JSON.parse(raw); }
+          catch { lastTransactionsRequestBody = { __noJson: raw.length }; }
+        }
+      }
     } catch { /* URL no parseable, se ignora */ }
   });
 
@@ -626,7 +645,10 @@ async function scrapeSantander(
   if (checkingCaptures.length > 0) {
     debugLog.push(`  Checking API: ${checkingCaptures.length} response(s) captured`);
     let apiMovements = normalizeSantanderCheckingApiMovements(checkingCaptures);
-    debugLog.push(`  Checking API movements: ${apiMovements.length}`);
+    debugLog.push(
+      `  Checking API movements: ${apiMovements.length}` +
+      (skippedZeroAmount > 0 ? ` (${skippedZeroAmount} fila(s) descartada(s) por monto 0 o ilegible)` : ""),
+    );
 
     if (apiMovements.length === 0) {
       // El formato de upstream no calzó. Se intenta el sobre genérico antes de rendirse al HTML.
@@ -636,6 +658,21 @@ async function scrapeSantander(
     if (apiMovements.length === 0) {
       // Ninguno de los dos entendió la respuesta. La forma dice por qué, sin exponer datos.
       debugLog.push(`  forma de la respuesta: ${describeShape(checkingCaptures[0])}`);
+
+      // Las CLAVES de additionalInfo, no sus valores: ahí el banco suele poner el motivo
+      // ("sin movimientos para el período"), y eso distingue "vino vacío" de "no hay nada".
+      const info = (checkingCaptures[0] as { additionalInfo?: Array<{ key?: string }> })?.additionalInfo;
+      if (Array.isArray(info)) {
+        debugLog.push(`  additionalInfo keys: ${info.map((i) => i?.key ?? "?").join(", ")}`);
+      }
+
+      // Y el CUERPO de la petición, también solo su forma: es lo que permitiría llamar al
+      // endpoint directamente con un rango de fechas, en vez de pelear con la UI.
+      if (lastTransactionsRequestBody !== null) {
+        debugLog.push(`  forma del request: ${describeShape(lastTransactionsRequestBody)}`);
+      } else {
+        debugLog.push("  forma del request: no se capturó el cuerpo del POST");
+      }
     }
     if (apiMovements.length > 0) {
       movements.push(...apiMovements);

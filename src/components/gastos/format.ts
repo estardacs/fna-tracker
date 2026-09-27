@@ -28,7 +28,9 @@ export function shortDate(isoDay: string): string {
 
 export const BANK_NAMES: Record<string, string> = {
   bchile: 'Banco de Chile',
-  edwards: 'Banco Edwards',
+  // Edwards es una marca de Banco de Chile y, en esta cuenta, el mismo producto. Se muestra
+  // siempre como Banco de Chile por preferencia explícita, para que no parezcan dos bancos.
+  edwards: 'Banco de Chile',
   santander: 'Santander',
   falabella: 'Banco Falabella',
   bice: 'Banco BICE',

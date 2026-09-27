@@ -22,7 +22,6 @@ import { fileURLToPath } from 'node:url';
 
 import bchile from './vendor/open-banking-chile/src/banks/bchile.js';
 import santander from './vendor/open-banking-chile/src/banks/santander.js';
-import edwards from './vendor/open-banking-chile/src/banks/edwards.js';
 import type {
   AccountBalance, BankMovement, CreditCardBalance, ScrapeResult,
 } from './vendor/open-banking-chile/src/types.js';
@@ -66,7 +65,22 @@ loadEnv();
 // parece bastante desde su lado. El upstream recomienda máximo una corrida por hora.
 const MIN_MINUTES_BETWEEN_RUNS = 30;
 
-const SCRAPERS = { bchile, santander, edwards } as const;
+/**
+ * `edwards` está vendorizado pero NO registrado, a propósito.
+ *
+ * Edwards es una marca de Banco de Chile y, en esta cuenta, el mismo producto: `bchile` reporta
+ * "Found 1 products" y Edwards muestra una sola cuenta. Como son bancos distintos para el
+ * esquema, sus `external_key` difieren y correr los dos crearía DOS cuentas con los mismos
+ * movimientos duplicados — y nada los deduplicaría, porque la identidad se deriva por banco.
+ *
+ * `bchile` además domina: 35 movimientos desde el 13-08 contra 20 desde el 01-09, y entrega la
+ * máscara real de la cuenta, que Edwards no da. De paso, el saldo de $50.000 que leyó Edwards
+ * confirma que el 0 de `bchile` era falso.
+ *
+ * Para reactivarlo —por ejemplo si el portal de Banco de Chile se rompe— basta agregarlo acá y
+ * decidir primero qué hacer con la cuenta duplicada.
+ */
+const SCRAPERS = { bchile, santander } as const;
 type BankId = keyof typeof SCRAPERS;
 
 // ─── Argumentos ──────────────────────────────────────────────────────────────────────
