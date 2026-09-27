@@ -148,6 +148,11 @@ Siete, todos marcados en el propio archivo:
   respuesta para que los dos caminos de captura no guarden la misma dos veces — un duplicado
   exacto se convertiría aguas abajo en una transacción idéntica inventada.
 
+  Con eso la captura funciona (`Checking API: 1 response(s) captured`), pero el normalizador
+  saca 0 movimientos: asume `{ movements: [...] }` y el banco envuelve la lista de otra forma.
+  Se agrega `describeShape()`, que imprime nombres de campos, tipos y largos de arreglo y
+  **nunca valores**, para poder ver la estructura sin exponer un movimiento real.
+
 ### Lo que el banco mide de vuelta
 
 La lista de endpoints de Santander incluye `perdsk/seguridad/Biocatch/getScore`, un dominio

@@ -36,6 +36,29 @@ interface SantanderCheckingApiMovement {
   newBalance?: string;
 }
 
+/**
+ * DIAGNÓSTICO (cambio respecto a upstream).
+ *
+ * Describe la FORMA de una respuesta: nombres de campos, tipos y largos de arreglo. Nunca
+ * valores. Así se puede pegar en un chat o un issue sin exponer un solo movimiento real.
+ *
+ * Existe porque `normalizeSantanderCheckingApiMovements` asume `{ movements: [...] }`, y si el
+ * banco envuelve la lista de otra forma devuelve 0 en silencio — indistinguible de una cuenta
+ * sin movimientos.
+ */
+export function describeShape(value: unknown, depth = 0): string {
+  if (depth > 7) return "…";
+  if (Array.isArray(value)) {
+    return value.length === 0 ? "[]" : `[${value.length} × ${describeShape(value[0], depth + 1)}]`;
+  }
+  if (value === null) return "null";
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).slice(0, 30);
+    return `{ ${entries.map(([k, v]) => `${k}: ${describeShape(v, depth + 1)}`).join(", ")} }`;
+  }
+  return typeof value;
+}
+
 export function normalizeSantanderCheckingApiMovements(captures: unknown[]): BankMovement[] {
   const movements: BankMovement[] = [];
   for (const capture of captures) {
@@ -468,6 +491,10 @@ async function scrapeSantander(
     debugLog.push(`  Checking API: ${checkingCaptures.length} response(s) captured`);
     const apiMovements = normalizeSantanderCheckingApiMovements(checkingCaptures);
     debugLog.push(`  Checking API movements: ${apiMovements.length}`);
+    if (apiMovements.length === 0) {
+      // Se capturó una respuesta pero no se entendió. La forma dice por qué, sin exponer datos.
+      debugLog.push(`  forma de la respuesta: ${describeShape(checkingCaptures[0])}`);
+    }
     if (apiMovements.length > 0) {
       movements.push(...apiMovements);
     }
@@ -501,6 +528,7 @@ async function scrapeSantander(
     if (await clickTcTab(page, "movimientos por facturar")) {
       const unbilledCaptures = await interceptor.waitFor("santander-credit-card-unbilled", 10_000);
       if (unbilledCaptures.length > 0) {
+        debugLog.push(`  forma TC unbilled: ${describeShape(unbilledCaptures[0])}`);
         const unbilledMovements = normalizeSantanderUnbilledApiMovements(unbilledCaptures);
         cardMovements.push(...unbilledMovements);
         debugLog.push(`  CC API (unbilled): ${unbilledMovements.length} movement(s)`);
@@ -514,6 +542,7 @@ async function scrapeSantander(
     if (await clickTcTab(page, "movimientos facturados")) {
       const billedCaptures = await interceptor.waitFor("santander-credit-card-billed", 10_000);
       if (billedCaptures.length > 0) {
+        debugLog.push(`  forma TC billed: ${describeShape(billedCaptures[0])}`);
         const billedMovements = normalizeSantanderBilledApiMovements(billedCaptures);
         cardMovements.push(...billedMovements);
         debugLog.push(`  CC API (billed): ${billedMovements.length} movement(s)`);
