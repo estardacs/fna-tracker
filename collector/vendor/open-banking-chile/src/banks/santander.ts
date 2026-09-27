@@ -24,6 +24,13 @@ const SANTANDER_CC_API_PREFIX =
   "https://api-dsk.santander.cl/perdsk/tarjetasDeCredito/consultaUltimosMovimientos";
 const SANTANDER_CC_BILLED_API_PREFIX =
   "https://api-dsk.santander.cl/perdsk/tarjetasDeCredito/estadoCuentaNacional";
+// CAMBIO RESPECTO A UPSTREAM — dos endpoints mas de la vista de facturacion de la tarjeta.
+// Aparecieron en el volcado de endpoints cuando la persona navego a mano: el banco los responde
+// y upstream ni los registra, asi que sus datos se perdian silenciosamente.
+const SANTANDER_CC_STATEMENT_PREFIX =
+  "https://api-dsk.santander.cl/perdsk/tarjetasDeCredito/estadoDeCuenta";
+const SANTANDER_CC_SUMMARY_PREFIX =
+  "https://api-app.santander.cl/appper/Mazon/ResumenEECCNacional";
 
 // ─── API response normalizers ────────────────────────────────────
 
@@ -526,6 +533,8 @@ async function scrapeSantander(
     { id: "santander-checking", urlPrefix: SANTANDER_CHECKING_API_PREFIX },
     { id: "santander-credit-card-unbilled", urlPrefix: SANTANDER_CC_API_PREFIX },
     { id: "santander-credit-card-billed", urlPrefix: SANTANDER_CC_BILLED_API_PREFIX },
+    { id: "santander-credit-card-statement", urlPrefix: SANTANDER_CC_STATEMENT_PREFIX },
+    { id: "santander-credit-card-summary", urlPrefix: SANTANDER_CC_SUMMARY_PREFIX },
   ]);
 
   // 1. Navigate
@@ -692,7 +701,14 @@ async function scrapeSantander(
     }
   }
 
-  if (movements.length === 0) {
+  // En modo manual NO se raspa el HTML. La captura del API es la fuente confiable, y raspar
+  // una pantalla a la que no navegamos nosotros es adivinar: la corrida anterior saco 22 filas
+  // de una vista de tarjeta interpretandolas como cuenta corriente, con todos los montos en
+  // positivo cuando eran cargos. Cero movimientos es una respuesta honesta; 22 con el signo al
+  // reves es peor que nada, porque se ve como un dato valido.
+  if (movements.length === 0 && options.onPause) {
+    debugLog.push("  Checking API sin datos; en modo manual no se cae al HTML (signos poco fiables)");
+  } else if (movements.length === 0) {
     debugLog.push("  Checking API: no data, falling back to HTML extraction");
     if (accounts.length <= 1) {
       movements = await paginateAndExtract(page, extractAccountMovements, debugLog);
@@ -716,6 +732,42 @@ async function scrapeSantander(
   movements = deduplicateMovements(movements);
 
   // 7b. Credit card movements
+  //
+  // CAMBIO RESPECTO A UPSTREAM — en modo manual se leen las capturas directamente.
+  //
+  // Upstream solo consume lo capturado si `clickTcTab` logra abrir la pestana. Cuando la
+  // persona ya navego a mano, el banco YA respondio con sus movimientos y esos clics fallan
+  // —la pantalla no es la que el selector espera—, de modo que la respuesta correcta se
+  // descartaba en silencio. Esto fue exactamente lo que paso: los POST a
+  // consultaUltimosMovimientos y estadoCuentaNacional aparecen en el volcado de endpoints y
+  // aun asi el resultado tenia 0 movimientos de tarjeta.
+  if (options.onPause) {
+    const fuentes: Array<[string, MovementSource]> = [
+      ["santander-credit-card-unbilled", MOVEMENT_SOURCE.credit_card_unbilled],
+      ["santander-credit-card-billed", MOVEMENT_SOURCE.credit_card_billed],
+      ["santander-credit-card-statement", MOVEMENT_SOURCE.credit_card_billed],
+      ["santander-credit-card-summary", MOVEMENT_SOURCE.credit_card_billed],
+    ];
+
+    for (const [id, source] of fuentes) {
+      const capturas = interceptor.getAll(id);
+      if (capturas.length === 0) continue;
+
+      let movs: BankMovement[] = [];
+      if (id === "santander-credit-card-unbilled") movs = normalizeSantanderUnbilledApiMovements(capturas);
+      else if (id === "santander-credit-card-billed") movs = normalizeSantanderBilledApiMovements(capturas);
+      if (movs.length === 0) movs = normalizeGenericApiMovements(capturas, source);
+
+      debugLog.push(`  ${id}: ${capturas.length} respuesta(s) → ${movs.length} movimiento(s)`);
+      if (movs.length === 0) {
+        debugLog.push(`    forma: ${describeShape(capturas[0])}`);
+      }
+      cardMovements.push(...movs);
+    }
+
+    debugLog.push(`7b. Modo manual: ${cardMovements.length} movimiento(s) de tarjeta desde las capturas`);
+  } else {
+
   debugLog.push("7b. Navigating to credit card movements...");
   progress("Extrayendo movimientos de tarjeta de crédito...");
   const tcReady = await navigateToCreditCardSection(page, debugLog);
@@ -750,6 +802,7 @@ async function scrapeSantander(
     }
   } else {
     debugLog.push("  Could not open credit card section.");
+  }
   }
   movements = deduplicateMovements(movements);
 
