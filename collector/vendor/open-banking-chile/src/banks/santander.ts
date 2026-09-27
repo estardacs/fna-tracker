@@ -639,6 +639,7 @@ async function scrapeSantander(
   // como si fueran de una cuenta corriente. Acá se conserva la separación.
   const perAccount = new Map<string, BankMovement[]>();
   const cardMovements: BankMovement[] = [];
+  let lastSelected: string | null = null;
 
   // Try API interception for checking account
   const checkingCaptures = await interceptor.waitFor("santander-checking", 10_000);
@@ -692,6 +693,9 @@ async function scrapeSantander(
         }
         const acctMovements = await paginateAndExtract(page, extractAccountMovements, debugLog);
         perAccount.set(account.label, acctMovements);
+        // `extractBalance` lee el saldo de la cuenta SELECCIONADA en pantalla, así que se
+        // anota cuál quedó activa: al terminar el bucle, ese número es de esta cuenta.
+        lastSelected = account.label;
         movements.push(...acctMovements);
         debugLog.push(`  ${account.label}: ${acctMovements.length} movement(s)`);
       }
@@ -762,16 +766,21 @@ async function scrapeSantander(
   await doSave(page, "05-final");
   const ss = doScreenshots ? ((await page.screenshot({ encoding: "base64", fullPage: true })) as string) : undefined;
 
-  // Una cuenta por producto detectado. `extractBalance` lee UN número de la pantalla, que
-  // corresponde a la cuenta seleccionada en ese momento — con varias cuentas no se puede
-  // atribuir con honestidad, así que solo se adjunta cuando hay una sola. Un saldo puesto en la
-  // cuenta equivocada es peor que un saldo ausente.
-  const single = perAccount.size <= 1;
+  // `extractBalance` lee UN número de la pantalla: el de la cuenta seleccionada en ese momento.
+  // La primera versión de esto lo descartaba cuando había varias cuentas, para no arriesgar
+  // ponerlo en la equivocada — y el efecto fue peor: el saldo se leía bien y no se mostraba en
+  // ninguna parte. Ahora se adjunta a la última cuenta que quedó seleccionada, que es
+  // exactamente de la que el número proviene, y el debug log deja constancia de a cuál fue.
+  const owner = lastSelected ?? accounts[0]?.label ?? null;
+  if (balance !== undefined && perAccount.size > 1) {
+    debugLog.push(`  saldo $${balance.toLocaleString("es-CL")} atribuido a: ${owner}`);
+  }
+
   const accountEntries =
     perAccount.size > 0
       ? [...perAccount.entries()].map(([label, movs]) => ({
           label,
-          balance: single ? balance : undefined,
+          balance: label === owner ? balance : undefined,
           movements: deduplicateMovements(movs),
         }))
       : [{ label: accounts[0]?.label, balance, movements }];

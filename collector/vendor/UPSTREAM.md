@@ -106,9 +106,11 @@ Siete, todos marcados en el propio archivo:
   inventada que mezcla productos distintos, y los cargos de la tarjeta quedarían guardados como
   si fueran de una cuenta corriente. Ahora hay una entrada por producto y `creditCards` propio.
 
-  El saldo se adjunta **solo si hay una cuenta**: `extractBalance` lee un número de la pantalla,
-  que corresponde a la cuenta seleccionada en ese momento, y con varias no se puede atribuir.
-  Un saldo en la cuenta equivocada es peor que un saldo ausente.
+  El saldo se adjunta a la **última cuenta que quedó seleccionada**, que es exactamente de la que
+  `extractBalance` lo lee. La primera versión lo descartaba cuando había varias cuentas, por no
+  arriesgar ponerlo en la equivocada, y el efecto fue peor: el banco entregaba `$60.146`, el log
+  lo mostraba, y las tres cuentas aparecían con `saldo=—`. Un dato leído y tirado es peor que uno
+  atribuido con un criterio explícito; el debug log deja constancia de a cuál cuenta fue.
 
   Se agrega además un observador de `page.on("request")` que registra método y ruta de lo que la
   página pide en dominios del banco —sin cuerpos, sin query strings, sin cabeceras— porque la

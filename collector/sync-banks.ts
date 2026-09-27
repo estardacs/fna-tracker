@@ -443,6 +443,11 @@ function mapCard(c: CreditCardBalance, win: { from: string; to: string; complete
 
 function printSummary(payload: ReturnType<typeof buildPayload>, secrets: string[]) {
   console.log(`\nBanco: ${payload.bank}   cuentas: ${payload.accounts.length}`);
+  // Si ninguna cuenta trae saldo, decirlo explícitamente: un "—" repetido en cada línea no
+  // distingue "el banco no lo entregó" de "se leyó y se perdió en el camino".
+  if (payload.accounts.length > 0 && payload.accounts.every(a => a.balance === null)) {
+    console.log('  (ninguna cuenta trae saldo; con --debug el log dice si el banco lo entregó)');
+  }
   for (const a of payload.accounts) {
     // dd-mm-yyyy ordenado como texto da un rango sin sentido ("01-09 … 31-08"), porque compara
     // el día antes del mes. Se ordena por la forma ISO.
