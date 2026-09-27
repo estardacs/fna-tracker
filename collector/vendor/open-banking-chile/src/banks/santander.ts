@@ -325,6 +325,24 @@ async function scrapeSantander(
   const bank = "santander";
   const progress = onProgress || (() => {});
 
+  // DIAGNÓSTICO (cambio respecto a upstream).
+  //
+  // La intercepción funciona por prefijo de URL con una ventana de 10 segundos, así que "no
+  // data" puede significar dos cosas muy distintas: que el banco renombró el endpoint, o que la
+  // llamada ocurre fuera de esa ventana. Sin saber cuál, arreglar la extracción es a ciegas.
+  //
+  // Se registran solo MÉTODO y RUTA de lo que pide la página en dominios del banco. Sin
+  // cuerpos, sin query strings, sin cabeceras: nada de esto lleva datos financieros ni
+  // credenciales, solo la forma del API. Se ve únicamente con --debug.
+  const seenEndpoints = new Set<string>();
+  page.on("request", (req) => {
+    try {
+      const u = new URL(req.url());
+      if (!u.hostname.endsWith("santander.cl")) return;
+      seenEndpoints.add(`${req.method()} ${u.hostname}${u.pathname}`);
+    } catch { /* URL no parseable, se ignora */ }
+  });
+
   // Install API interceptor before first page.goto()
   const interceptor = await createInterceptor(page, [
     { id: "santander-checking", urlPrefix: SANTANDER_CHECKING_API_PREFIX },
@@ -435,6 +453,15 @@ async function scrapeSantander(
 
   let movements: BankMovement[] = [];
 
+  // CAMBIO RESPECTO A UPSTREAM — ver ../../UPSTREAM.md
+  //
+  // Upstream junta TODO —las tres cuentas y la tarjeta— en un solo `accounts: [{ balance,
+  // movements }]` sin label. Con tres cuentas reales eso produce una cuenta inventada que
+  // mezcla movimientos de productos distintos, y los cargos de la tarjeta quedarían guardados
+  // como si fueran de una cuenta corriente. Acá se conserva la separación.
+  const perAccount = new Map<string, BankMovement[]>();
+  const cardMovements: BankMovement[] = [];
+
   // Try API interception for checking account
   const checkingCaptures = await interceptor.waitFor("santander-checking", 10_000);
   if (checkingCaptures.length > 0) {
@@ -458,6 +485,7 @@ async function scrapeSantander(
           continue;
         }
         const acctMovements = await paginateAndExtract(page, extractAccountMovements, debugLog);
+        perAccount.set(account.label, acctMovements);
         movements.push(...acctMovements);
         debugLog.push(`  ${account.label}: ${acctMovements.length} movement(s)`);
       }
@@ -474,12 +502,12 @@ async function scrapeSantander(
       const unbilledCaptures = await interceptor.waitFor("santander-credit-card-unbilled", 10_000);
       if (unbilledCaptures.length > 0) {
         const unbilledMovements = normalizeSantanderUnbilledApiMovements(unbilledCaptures);
-        movements.push(...unbilledMovements);
+        cardMovements.push(...unbilledMovements);
         debugLog.push(`  CC API (unbilled): ${unbilledMovements.length} movement(s)`);
       } else {
         debugLog.push("  CC API (unbilled): no data, falling back to HTML extraction");
         const unbilled = await extractCreditCardMovements(page, "unbilled");
-        movements.push(...unbilled);
+        cardMovements.push(...unbilled);
         debugLog.push(`  TC por facturar: ${unbilled.length} movement(s)`);
       }
     }
@@ -487,12 +515,12 @@ async function scrapeSantander(
       const billedCaptures = await interceptor.waitFor("santander-credit-card-billed", 10_000);
       if (billedCaptures.length > 0) {
         const billedMovements = normalizeSantanderBilledApiMovements(billedCaptures);
-        movements.push(...billedMovements);
+        cardMovements.push(...billedMovements);
         debugLog.push(`  CC API (billed): ${billedMovements.length} movement(s)`);
       } else {
         debugLog.push("  CC API (billed): no data, falling back to HTML extraction");
         const billed = await extractCreditCardMovements(page, "billed");
-        movements.push(...billed);
+        cardMovements.push(...billed);
         debugLog.push(`  TC facturados: ${billed.length} movement(s)`);
       }
     }
@@ -512,14 +540,44 @@ async function scrapeSantander(
     balance = await extractBalance(page);
   }
 
-  debugLog.push(`8. Extracted ${movements.length} movement(s)`);
-  progress(`Listo — ${movements.length} movimientos totales`);
+  // Volcado al final: si la extracción trajo 0, acá está la lista de lo que la página sí llamó.
+  if (seenEndpoints.size > 0) {
+    debugLog.push(`  endpoints vistos (${seenEndpoints.size}):`);
+    for (const e of [...seenEndpoints].sort()) debugLog.push(`    ${e}`);
+  }
+
+  const totalCount = movements.length + cardMovements.length;
+  debugLog.push(`8. Extracted ${movements.length} de cuenta + ${cardMovements.length} de tarjeta`);
+  progress(`Listo — ${totalCount} movimientos totales`);
   debugLog.push(balance !== undefined ? `9. Balance: $${balance.toLocaleString("es-CL")}` : "9. Balance not found");
 
   await doSave(page, "05-final");
   const ss = doScreenshots ? ((await page.screenshot({ encoding: "base64", fullPage: true })) as string) : undefined;
 
-  return { success: true, bank, accounts: [{ balance, movements }], screenshot: ss, debug: debugLog.join("\n") };
+  // Una cuenta por producto detectado. `extractBalance` lee UN número de la pantalla, que
+  // corresponde a la cuenta seleccionada en ese momento — con varias cuentas no se puede
+  // atribuir con honestidad, así que solo se adjunta cuando hay una sola. Un saldo puesto en la
+  // cuenta equivocada es peor que un saldo ausente.
+  const single = perAccount.size <= 1;
+  const accountEntries =
+    perAccount.size > 0
+      ? [...perAccount.entries()].map(([label, movs]) => ({
+          label,
+          balance: single ? balance : undefined,
+          movements: deduplicateMovements(movs),
+        }))
+      : [{ label: accounts[0]?.label, balance, movements }];
+
+  return {
+    success: true,
+    bank,
+    accounts: accountEntries,
+    creditCards: cardMovements.length > 0
+      ? [{ label: "Tarjeta de Crédito", movements: deduplicateMovements(cardMovements) }]
+      : undefined,
+    screenshot: ss,
+    debug: debugLog.join("\n"),
+  };
 }
 
 // ─── Export ──────────────────────────────────────────────────────────

@@ -64,7 +64,7 @@ cualquier plan de correr esto desatendido.
 
 ## Cambios respecto a upstream
 
-Cuatro, todos marcados en el propio archivo:
+Cinco, todos marcados en el propio archivo:
 
 - **`src/infrastructure/browser.ts` — el sandbox de Chrome queda encendido.** Upstream pone
   `--no-sandbox` y `--disable-setuid-sandbox` fijos en `DEFAULT_ARGS`. Acá son opt-in con
@@ -99,6 +99,26 @@ Cuatro, todos marcados en el propio archivo:
   la cartola, que ese endpoint devuelve en `"0"`. En una Cuenta Fan el resultado es un saldo 0
   falso, indistinguible de una cuenta vacía de verdad. Ahora hay fallback a la primera cuenta en
   CLP, se registra qué camino se usó y el error deja rastro.
+
+- **`src/banks/santander.ts` — una entrada por cuenta, la tarjeta aparte, y diagnóstico de
+  endpoints.** Upstream junta las tres cuentas y la tarjeta en un solo
+  `accounts: [{ balance, movements }]` sin label. Con tres cuentas reales eso fabrica una cuenta
+  inventada que mezcla productos distintos, y los cargos de la tarjeta quedarían guardados como
+  si fueran de una cuenta corriente. Ahora hay una entrada por producto y `creditCards` propio.
+
+  El saldo se adjunta **solo si hay una cuenta**: `extractBalance` lee un número de la pantalla,
+  que corresponde a la cuenta seleccionada en ese momento, y con varias no se puede atribuir.
+  Un saldo en la cuenta equivocada es peor que un saldo ausente.
+
+  Se agrega además un observador de `page.on("request")` que registra método y ruta de lo que la
+  página pide en dominios del banco —sin cuerpos, sin query strings, sin cabeceras— porque la
+  intercepción por prefijo con ventana de 10 s no distingue entre "el endpoint cambió de nombre"
+  y "la llamada pasó fuera de la ventana", y sin ese dato arreglar la extracción es a ciegas.
+
+  **Estado conocido: la extracción de movimientos de Santander está rota.** Login, listado de
+  cuentas y saldo funcionan; las tres cuentas y la tarjeta devuelven 0 movimientos, tanto por
+  API como por el fallback de HTML. No hay issue abierto en upstream por esto (sí #53 por
+  Scotiabank). Los selectores llevan cuatro meses sin tocarse.
 
 ## Revisión de seguridad — 2026-09-26, ampliada el 2026-09-27
 

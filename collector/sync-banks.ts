@@ -288,6 +288,37 @@ function toNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * La máscara de una cuenta o tarjeta, y el label ya enmascarado.
+ *
+ * Banco de Chile entrega la máscara hecha ("Cuenta Fan ****1089"), pero Santander entrega el
+ * número COMPLETO: "Cuenta Corriente 0 001 00 92731 4". Eso no se guarda. No es un PAN de
+ * tarjeta, pero un número de cuenta completo en una columna de texto es justo el tipo de dato
+ * que este diseño evita, y no aporta nada: para identidad bastan los últimos cuatro dígitos,
+ * que además se mantienen estables si el banco reformatea el texto.
+ *
+ * Devuelve el label con el número ya reemplazado por la máscara, para que el número crudo no
+ * llegue nunca al payload ni a la consola.
+ */
+function maskAccountLabel(raw?: string): { label: string; mask: string | null } {
+  const label = (raw ?? '').trim();
+  if (!label) return { label: 'Cuenta', mask: null };
+
+  // Ya viene enmascarado por el banco.
+  const existing = label.match(MASK_RE)?.[0];
+  if (existing) return { label, mask: existing };
+
+  // Un número de cuenta, posiblemente con espacios, puntos o guiones: "0 001 00 92731 4".
+  const numeric = label.match(/[\d][\d\s.-]{5,}/)?.[0];
+  if (!numeric) return { label, mask: null };
+
+  const digits = numeric.replace(/\D/g, '');
+  if (digits.length < 4) return { label: label.replace(numeric, '').trim(), mask: null };
+
+  const mask = `****${digits.slice(-4)}`;
+  return { label: label.replace(numeric, mask).replace(/\s+/g, ' ').trim(), mask };
+}
+
 const extractMask = (label?: string): string | null => label?.match(MASK_RE)?.[0] ?? null;
 
 function accountKind(label: string): 'checking' | 'savings' | 'line_of_credit' {
@@ -311,11 +342,11 @@ const movement = (m: BankMovement) => ({
 });
 
 function mapAccount(a: AccountBalance, win: { from: string; to: string; complete: boolean }) {
-  const label = a.label ?? 'Cuenta';
+  const { label, mask } = maskAccountLabel(a.label);
   return {
     kind: accountKind(label),
     label,
-    mask: extractMask(label),
+    mask,
     currency: 'CLP' as const,
     balance: toNumber(a.balance),
     window: win,
@@ -325,10 +356,11 @@ function mapAccount(a: AccountBalance, win: { from: string; to: string; complete
 
 function mapCard(c: CreditCardBalance, win: { from: string; to: string; complete: boolean }) {
   const movements = (c.movements ?? []).map(movement);
+  const { label, mask } = maskAccountLabel(c.label);
   return {
     kind: 'credit_card' as const,
-    label: c.label,
-    mask: extractMask(c.label),
+    label,
+    mask,
     currency: 'CLP' as const,
     balance: null,
     window: win,
