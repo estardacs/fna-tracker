@@ -1,5 +1,5 @@
 import type { Frame, Page } from "puppeteer-core";
-import type { BankMovement, BankScraper, ScrapeResult, ScraperOptions } from "../types.js";
+import type { BankMovement, BankScraper, MovementSource, ScrapeResult, ScraperOptions } from "../types.js";
 import { MOVEMENT_SOURCE } from "../types.js";
 import { deduplicateMovements, closePopups, delay, normalizeDate, parseChileanAmount } from "../utils.js";
 import { createInterceptor } from "../intercept.js";
@@ -57,6 +57,142 @@ export function describeShape(value: unknown, depth = 0): string {
     return `{ ${entries.map(([k, v]) => `${k}: ${describeShape(v, depth + 1)}`).join(", ")} }`;
   }
   return typeof value;
+}
+
+
+// ─── Normalizador genérico de sobre open banking (cambio respecto a upstream) ─────────
+//
+// `normalizeSantanderCheckingApiMovements` asume `{ movements: [...] }` con montos en
+// centavos como string. El endpoint que el banco usa hoy
+// (openbanking.santander.cl/account_balances_transactions_and_withholdings_retail) responde con
+// otra envoltura, y al no reconocerla el normalizador devuelve 0 en silencio.
+//
+// Esto busca el arreglo de transacciones donde sea que esté y mapea los nombres de campo
+// habituales, tanto los de Santander como los del estándar tipo Berlin Group.
+
+const DATE_KEYS = ["bookingDate", "valueDate", "transactionDate", "fechaContable", "fecha", "date"];
+// `movementAmount` queda DELIBERADAMENTE fuera: viene en centavos como string y solo el
+// normalizador legado sabe que hay que dividir por 100. Si entrara acá, un valor ya expresado
+// en pesos se multiplicaría por 100 — el error de escala que después no se distingue de un
+// monto real.
+const AMOUNT_KEYS = ["transactionAmount", "amount", "monto", "importe"];
+const DESC_KEYS = [
+  "remittanceInformationUnstructured", "additionalInformation", "observation", "expandedCode",
+  "creditorName", "debtorName", "merchantName", "NombreComercio", "descripcion", "description", "glosa",
+];
+const BALANCE_KEYS = ["balanceAfterTransaction", "newBalance", "saldo", "balance"];
+
+function pick(o: Record<string, unknown>, keys: string[]): unknown {
+  for (const k of keys) if (o[k] !== undefined && o[k] !== null && o[k] !== "") return o[k];
+  return undefined;
+}
+
+/**
+ * Convierte el monto a número SIN adivinar la escala.
+ *
+ * El punto es separador de miles en Chile y separador decimal en el estándar, así que la
+ * distinción se hace por forma, no por suposición: dividir por 100 un valor que ya venía en
+ * pesos produce un error de 100× que después no se distingue de un monto real.
+ */
+function parseAmount(raw: unknown): number | null {
+  const value = raw && typeof raw === "object" ? (raw as { amount?: unknown }).amount : raw;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+
+  let s = value.trim().replace(/\s/g, "");
+  let negative = s.startsWith("-") || s.endsWith("-");   // Santander marca el cargo con "-" al final
+  s = s.replace(/-/g, "");
+
+  let n: number | null = null;
+  if (/^\d+$/.test(s)) n = Number(s);                                  // entero
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) n = Number(s.replace(/\./g, ""));  // 1.234.567 → miles
+  else if (/^\d+\.\d{1,2}$/.test(s)) n = Number(s);                    // 18990.00 → decimal
+  else if (/^\d{1,3}(\.\d{3})*,\d{1,2}$/.test(s)) n = Number(s.replace(/\./g, "").replace(",", "."));
+  else if (/^\d{1,3}(,\d{3})+$/.test(s)) n = Number(s.replace(/,/g, ""));
+  if (n === null || !Number.isFinite(n)) return null;
+
+  return negative ? -n : n;
+}
+
+function isDebit(o: Record<string, unknown>, amountRaw: unknown): boolean {
+  const ind = String(pick(o, ["creditDebitIndicator", "chargePaymentFlag", "tipo"]) ?? "").toUpperCase();
+  if (ind.startsWith("DBIT") || ind === "D" || ind === "CARGO") return true;
+  if (ind.startsWith("CRDT") || ind === "C" || ind === "ABONO") return false;
+  // El monto puede venir como { amount: "-18990.00", currency: "CLP" }: hay que mirar adentro,
+  // o el signo que el propio banco ya expresó se pierde.
+  const inner = amountRaw && typeof amountRaw === "object"
+    ? (amountRaw as { amount?: unknown }).amount
+    : amountRaw;
+  const asText = typeof inner === "string" ? inner.trim() : "";
+  return asText.startsWith("-") || asText.endsWith("-");
+}
+
+function looksTransactional(o: unknown): boolean {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return false;
+  const keys = Object.keys(o);
+  return DATE_KEYS.some((k) => keys.includes(k)) && AMOUNT_KEYS.some((k) => keys.includes(k));
+}
+
+function collectTransactionArrays(
+  value: unknown,
+  out: Record<string, unknown>[][],
+  depth = 0,
+): void {
+  if (depth > 7 || !value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    if (value.length > 0 && looksTransactional(value[0])) out.push(value as Record<string, unknown>[]);
+    return;
+  }
+  for (const v of Object.values(value as Record<string, unknown>)) {
+    collectTransactionArrays(v, out, depth + 1);
+  }
+}
+
+/** yyyy-mm-dd → dd-mm-yyyy. normalizeDate deja pasar el ISO sin tocarlo, y aguas abajo la ruta
+ *  exige dd-mm-yyyy y rechaza el lote completo si no calza. */
+function isoToDdMmYyyy(raw: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : raw.trim();
+}
+
+export function normalizeGenericApiMovements(
+  captures: unknown[],
+  source: MovementSource = MOVEMENT_SOURCE.account,
+): BankMovement[] {
+  const movements: BankMovement[] = [];
+
+  for (const capture of captures) {
+    const arrays: Record<string, unknown>[][] = [];
+    collectTransactionArrays(capture, arrays);
+
+    for (const list of arrays) {
+      for (const o of list) {
+        const rawDate = pick(o, DATE_KEYS);
+        const rawAmount = pick(o, AMOUNT_KEYS);
+        if (typeof rawDate !== "string") continue;
+
+        const parsed = parseAmount(rawAmount);
+        if (parsed === null || parsed === 0) continue;
+
+        // Un signo negativo en el propio valor manda: es el banco diciéndolo explícitamente.
+        // El indicador solo decide cuando el número viene sin signo.
+        const debit = parsed < 0 || isDebit(o, rawAmount);
+        const amount = debit ? -Math.abs(parsed) : Math.abs(parsed);
+        const descRaw = pick(o, DESC_KEYS);
+        const balance = parseAmount(pick(o, BALANCE_KEYS)) ?? 0;
+
+        movements.push({
+          date: normalizeDate(isoToDdMmYyyy(rawDate)),
+          description: typeof descRaw === "string" ? descRaw.trim() : "",
+          amount,
+          balance,
+          source,
+        });
+      }
+    }
+  }
+
+  return movements;
 }
 
 export function normalizeSantanderCheckingApiMovements(captures: unknown[]): BankMovement[] {
@@ -489,10 +625,16 @@ async function scrapeSantander(
   const checkingCaptures = await interceptor.waitFor("santander-checking", 10_000);
   if (checkingCaptures.length > 0) {
     debugLog.push(`  Checking API: ${checkingCaptures.length} response(s) captured`);
-    const apiMovements = normalizeSantanderCheckingApiMovements(checkingCaptures);
+    let apiMovements = normalizeSantanderCheckingApiMovements(checkingCaptures);
     debugLog.push(`  Checking API movements: ${apiMovements.length}`);
+
     if (apiMovements.length === 0) {
-      // Se capturó una respuesta pero no se entendió. La forma dice por qué, sin exponer datos.
+      // El formato de upstream no calzó. Se intenta el sobre genérico antes de rendirse al HTML.
+      apiMovements = normalizeGenericApiMovements(checkingCaptures);
+      debugLog.push(`  Checking API (sobre genérico): ${apiMovements.length} movement(s)`);
+    }
+    if (apiMovements.length === 0) {
+      // Ninguno de los dos entendió la respuesta. La forma dice por qué, sin exponer datos.
       debugLog.push(`  forma de la respuesta: ${describeShape(checkingCaptures[0])}`);
     }
     if (apiMovements.length > 0) {

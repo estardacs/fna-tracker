@@ -149,9 +149,20 @@ Siete, todos marcados en el propio archivo:
   exacto se convertiría aguas abajo en una transacción idéntica inventada.
 
   Con eso la captura funciona (`Checking API: 1 response(s) captured`), pero el normalizador
-  saca 0 movimientos: asume `{ movements: [...] }` y el banco envuelve la lista de otra forma.
-  Se agrega `describeShape()`, que imprime nombres de campos, tipos y largos de arreglo y
-  **nunca valores**, para poder ver la estructura sin exponer un movimiento real.
+  saca 0 movimientos: asume `{ movements: [...] }` con montos en centavos, y el endpoint que el
+  banco usa hoy envuelve la lista de otra forma. Se agregan dos cosas:
+
+  `describeShape()`, que imprime nombres de campos, tipos y largos de arreglo y **nunca
+  valores**, para poder ver la estructura sin exponer un movimiento real.
+
+  `normalizeGenericApiMovements()`, que busca el arreglo de transacciones donde sea que esté y
+  mapea los nombres de campo habituales, tanto de Santander como del estándar tipo Berlin Group.
+  Dos decisiones importantes ahí: **`movementAmount` queda fuera a propósito**, porque viene en
+  centavos y solo el normalizador legado sabe dividir por 100 — dejarlo entrar multiplicaría por
+  100 un valor ya expresado en pesos, y ese error después no se distingue de un monto real. Y la
+  escala se decide **por la forma del string**, no por suposición: `1.234.567` son miles,
+  `18990.00` es decimal, `18.990,50` es coma decimal. Un signo negativo en el propio valor manda
+  sobre el indicador `creditDebitIndicator`, porque es el banco diciéndolo explícitamente.
 
 ### Lo que el banco mide de vuelta
 
