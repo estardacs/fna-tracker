@@ -9,7 +9,8 @@
     "lint": "eslint",
     "backfill": "tsx scripts/backfill-summaries.ts",
     "prune-metrics": "tsx scripts/prune-metrics.ts",
-    "sync-banks": "tsx collector/sync-banks.ts"
+    "sync-banks": "tsx collector/sync-banks.ts",
+    "probe-mp": "tsx collector/probe-mercadopago.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

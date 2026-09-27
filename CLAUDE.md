@@ -526,6 +526,38 @@ que llegue al payload.
 Santander adjunta el saldo solo si hay una sola cuenta: `extractBalance` lee un numero de la
 pantalla, el de la cuenta seleccionada, y con varias no se puede atribuir.
 
+### MercadoPago: sonda antes de colector
+
+```bash
+npm run probe-mp              # ultimos 30 dias
+npm run probe-mp -- --days=90
+```
+
+No escribe en la base. Responde una sola pregunta: **el reporte oficial "Todas las
+transacciones" contiene tus gastos, o solo cobros?**
+
+La API de MercadoPago esta hecha para vendedores conciliando cobros — las columnas del reporte
+son PAYMENT_METHOD, FEE_AMOUNT, SETTLEMENT_NET_AMOUNT, INSTALLMENTS, ORDER_ID, SHIPPING_ID — y
+la documentacion no promete que las transferencias recibidas, recargas, pagos de servicios o
+compras en Mercado Libre aparezcan. Para una cuenta personal el reporte puede venir vacio.
+Construir el colector antes de saberlo seria construir sobre una suposicion.
+
+Flujo documentado, por si hay que retomarlo: `GET /v1/account/settlement_report/config`,
+`POST /v1/account/settlement_report` con `{begin_date, end_date}` (202, asincrono),
+`GET .../list` para encontrar el `file_name`, `GET .../{file_name}` para el CSV.
+
+Necesita `MP_ACCESS_TOKEN` de **produccion** (empieza con `APP_USR-`). Una cuenta personal
+chilena puede activarlo declarando un rubro genérico; no pide RUT de empresa. La sonda rechaza
+los tokens `TEST-` porque no devuelven datos reales.
+
+La sonda imprime solo agregados: cuantas filas, que tipos de transaccion, rango de fechas y
+totales por signo. Nunca una transaccion individual. Si los montos negativos suman 0, ese
+reporte no trae gastos y hay que decidir entre escribir un scraper de MercadoPago (no existe
+upstream; el issue #27 de kaihv/open-banking-chile lo pide y sigue abierto) o dejarlo fuera.
+
+Ventaja si resulta: MercadoPago no necesita navegador ni clave dinamica, asi que es el unico de
+los tres que podria correr desatendido en la nube sin guardar una clave bancaria.
+
 ### Frecuencia
 
 El colector se niega a correr un banco cuya ultima corrida fue hace menos de 30 minutos, via
