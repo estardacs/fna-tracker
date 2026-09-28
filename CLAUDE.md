@@ -586,7 +586,19 @@ llamadas en cinco minutos: el documento HTML, `v3/security.js`, `melidata/tracks
 `notifications/center/api/badge` y `sessions/v2/planter`. Ninguna trae saldo. MercadoPago lo
 **renderiza del lado del servidor**, dentro del HTML.
 
-**Conclusion: no se persigue mas.** Sacar ese numero obliga a parsear HTML de una sesion
+**Conclusion: no se raspa; se ancla.** El saldo se anota a mano en `/gastos` y el sistema lo
+mantiene: `saldo(t) = ultimo ancla + suma de movimientos posteriores`. Al volver a anclar, la
+diferencia entre lo calculado y lo escrito **mide si el feed de movimientos esta completo** —un
+scraper devuelve un numero y ninguna forma de saber si es correcto; esto devuelve un numero y su
+margen de error. Columna `bank_balance_snapshots.source`: `scraped` | `manual` | `derived`
+(migracion `20260928000000`). Sirve igual para las reservas, que probablemente ni aparecen en el
+reporte de liquidaciones, y ahi el ancla no es el plan B sino el unico plan honesto.
+
+Razon adicional para no raspar el DOM: una de las etiquetas junto a las cifras dice
+**"Disponible desde la app"**, asi que la web podria estar mostrando una parte y reservando el
+resto para el movil. Un numero que no se puede verificar es peor que no tenerlo.
+
+**Y no se persigue el scraping.** Sacar ese numero obliga a parsear HTML de una sesion
 autenticada, que es el scraping mas fragil que existe, y a repetir cada vez el login con codigo
 al celular porque no se puede automatizar. Es mucho costo de mantencion por una cifra que se ve
 en la app. Los 86 movimientos con nombre de comercio, que es lo que hace util un registro de

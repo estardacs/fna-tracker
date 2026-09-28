@@ -1,6 +1,8 @@
 import { CreditCard, Landmark, PiggyBank, Wallet } from 'lucide-react';
 import type { AccountView } from '@/lib/bank-service';
 import { BANK_NAMES, KIND_LABELS, money, relativeTime, shortDate } from './format';
+import BalanceAnchor from './BalanceAnchor';
+import { cn } from '@/lib/utils';
 
 const ICONS = {
   checking: Landmark,
@@ -62,9 +64,36 @@ export default function AccountCards({ accounts }: { accounts: AccountView[] }) 
               </p>
             )}
 
+            {/* El derivado va DEBAJO del saldo leido, no en su lugar: son dos cosas distintas
+                y confundirlas seria peor que no mostrar ninguna. */}
+            {a.derivedBalance && (
+              <div className="mt-3 pt-3 border-t border-gray-800/60 space-y-0.5">
+                <p className="text-sm text-gray-200 tabular-nums">
+                  {money(a.derivedBalance.derived, a.currency)}
+                  <span className="ml-1.5 text-[10px] text-gray-600">calculado</span>
+                </p>
+                <p className="text-[10px] text-gray-600">
+                  anclado {shortDate(a.derivedBalance.anchoredAt.slice(0, 10))}
+                  {a.derivedBalance.movementCount > 0 &&
+                    ` · ${a.derivedBalance.movementCount} mov desde entonces`}
+                </p>
+                {a.derivedBalance.drift !== null && (
+                  <p className={cn(
+                    'text-[10px]',
+                    Math.abs(a.derivedBalance.drift) < 1 ? 'text-emerald-500/80' : 'text-amber-500/80',
+                  )}>
+                    {Math.abs(a.derivedBalance.drift) < 1
+                      ? 'los movimientos explican cada peso'
+                      : `deriva ${money(a.derivedBalance.drift, a.currency)} contra el ancla anterior`}
+                  </p>
+                )}
+              </div>
+            )}
+
             <p className="mt-3 text-[10px] text-gray-600">
               saldo capturado {relativeTime(a.capturedAt)}
             </p>
+            <BalanceAnchor accountId={a.id} currency={a.currency} compact />
           </div>
         );
       })}

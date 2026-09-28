@@ -380,6 +380,7 @@ async function writeSnapshot(accountId: string, runId: string, a: PayloadAccount
     stmt_due_date: toIsoDateOrNull(c.statementDueDate),
     stmt_minimum: c.statementMinimum ?? null,
     raw: a.credit ?? null,
+    source: 'scraped',
   });
   if (error) throw new Error(`No se pudo guardar el saldo de "${a.label}": ${error.message}`);
 }
@@ -587,6 +588,8 @@ export interface SyncStatus {
 
 export interface AccountView {
   id: string;
+  /** Saldo calculado desde el ultimo ancla manual, si lo hay. */
+  derivedBalance?: DerivedBalance | null;
   bank: string;
   kind: string;
   label: string;
@@ -696,9 +699,15 @@ export async function getGastosOverview(txLimit = 50): Promise<GastosOverview> {
     if (!latest.has(s.account_id)) latest.set(s.account_id, s);
   }
 
+  // El derivado solo tiene sentido donde alguien anclo un saldo; sin ancla no se consulta.
+  const derived = new Map<string, DerivedBalance | null>(
+    await Promise.all(accountRows.map(async a => [a.id, await computeDerivedBalance(a.id)] as const)),
+  );
+
   const accounts: AccountView[] = accountRows.map(a => {
     const s = latest.get(a.id);
     return {
+      derivedBalance: derived.get(a.id) ?? null,
       id: a.id, bank: a.bank, kind: a.kind, label: a.label, mask: a.mask, currency: a.currency,
       balance: s?.balance ?? null,
       capturedAt: s?.captured_at ?? null,
@@ -726,4 +735,117 @@ export async function getGastosOverview(txLimit = 50): Promise<GastosOverview> {
   }));
 
   return { syncs, accounts, transactions };
+}
+
+
+// ─── Saldo anclado a mano, y el derivado ─────────────────────────────────────────────
+
+export interface BalanceAnchor {
+  accountId: string;
+  balance: number;
+  /** Cuando se MIRO el saldo, no cuando se anoto. Por defecto, ahora. */
+  observedAt?: string;
+}
+
+/**
+ * Registra un saldo anotado por la persona.
+ *
+ * Existe porque hay cuentas cuyo saldo no se puede leer: el de MercadoPago no sale por API
+ * —403 en el endpoint de balance— y en la web va dentro del HTML. Pero el ancla no es solo un
+ * reemplazo del scraper: es el punto desde el que se calcula todo lo demas, y la vara con la
+ * que se mide si el feed de movimientos esta completo.
+ */
+export async function recordManualBalance(anchor: BalanceAnchor): Promise<void> {
+  if (!Number.isFinite(anchor.balance)) throw new Error('El saldo debe ser un número.');
+
+  const { data: account, error: accErr } = await supabaseAdmin
+    .from('bank_accounts')
+    .select('id, currency')
+    .eq('id', anchor.accountId)
+    .single();
+  if (accErr || !account) throw new Error('No existe esa cuenta.');
+
+  const { error } = await supabaseAdmin.from('bank_balance_snapshots').insert({
+    account_id: anchor.accountId,
+    balance: anchor.balance,
+    currency: account.currency,
+    captured_at: anchor.observedAt ?? new Date().toISOString(),
+    source: 'manual',
+  });
+  if (error) throw new Error(`No se pudo guardar el saldo: ${error.message}`);
+}
+
+export interface DerivedBalance {
+  /** El ancla mas reciente. */
+  anchor: number;
+  anchoredAt: string;
+  /** Suma de movimientos posteriores al ancla. */
+  sinceAnchor: number;
+  movementCount: number;
+  /** anchor + sinceAnchor: el saldo de hoy segun los movimientos. */
+  derived: number;
+  /**
+   * Diferencia entre el ancla mas reciente y lo que se habia derivado justo antes de ella.
+   * Cero significa que el feed de movimientos explica cada peso; distinto de cero dice cuanto
+   * se escapa y desde cuando. Es el valor real de anotar el saldo a mano.
+   */
+  drift: number | null;
+}
+
+/**
+ * Saldo de hoy calculado desde el ultimo ancla.
+ *
+ * Los movimientos se suman por `posted_date`, que es granularidad de dia: un movimiento del
+ * mismo dia del ancla se incluye solo si el ancla se anoto al comienzo del dia. Se resuelve
+ * contando estrictamente los dias POSTERIORES, que es la lectura conservadora — preferible
+ * subestimar el movimiento que contarlo dos veces.
+ */
+async function computeDerivedBalance(accountId: string): Promise<DerivedBalance | null> {
+  const { data: anchors, error: anchorErr } = await supabaseAdmin
+    .from('bank_balance_snapshots')
+    .select('balance, captured_at')
+    .eq('account_id', accountId)
+    .eq('source', 'manual')
+    .order('captured_at', { ascending: false })
+    .limit(2);
+  if (anchorErr || !anchors?.length) return null;
+
+  const latest = anchors[0];
+  const anchorDay = String(latest.captured_at).slice(0, 10);
+
+  const { data: movs, error: movErr } = await supabaseAdmin
+    .from('bank_transactions')
+    .select('amount')
+    .eq('account_id', accountId)
+    .gt('posted_date', anchorDay)
+    .is('missing_since', null);
+  if (movErr) return null;
+
+  const sinceAnchor = (movs ?? []).reduce((sum, m) => sum + Number(m.amount), 0);
+  const anchor = Number(latest.balance);
+
+  // Deriva: que tan bien el ancla anterior mas sus movimientos predijeron esta.
+  let drift: number | null = null;
+  if (anchors.length > 1) {
+    const previous = anchors[1];
+    const previousDay = String(previous.captured_at).slice(0, 10);
+    const { data: between } = await supabaseAdmin
+      .from('bank_transactions')
+      .select('amount')
+      .eq('account_id', accountId)
+      .gt('posted_date', previousDay)
+      .lte('posted_date', anchorDay)
+      .is('missing_since', null);
+    const predicted = Number(previous.balance) + (between ?? []).reduce((s, m) => s + Number(m.amount), 0);
+    drift = anchor - predicted;
+  }
+
+  return {
+    anchor,
+    anchoredAt: String(latest.captured_at),
+    sinceAnchor,
+    movementCount: (movs ?? []).length,
+    derived: anchor + sinceAnchor,
+    drift,
+  };
 }
