@@ -339,21 +339,49 @@ async function closeRun(runId: string, f: {
   if (error) console.error('[gastos] no se pudo cerrar la corrida:', error.message);
 }
 
-/** Busca o crea la cuenta por su identidad derivada, y refresca los campos mutables. */
+/**
+ * Busca o crea la cuenta por su identidad derivada, y refresca los campos mutables.
+ *
+ * Insert y update van por caminos separados, por la misma razon que en las transacciones: el
+ * `upsert` de supabase-js se traduce a `DO UPDATE SET <todas las columnas del payload>`, sin
+ * forma de excluir ninguna. Con un solo upsert, `active: true` se reescribia en cada corrida y
+ * cualquier cuenta que el usuario hubiera ocultado revivia sola en la siguiente sincronizacion.
+ *
+ * `active` es de quien mira, no del banco: significa "esta cuenta me interesa", no "el banco
+ * todavia la reporta". El colector sigue guardando sus movimientos y snapshots —no se pierde
+ * nada— pero /gastos no la muestra.
+ */
 async function resolveAccount(bank: string, a: PayloadAccount): Promise<string> {
   const externalKey = buildExternalKey(bank, a.kind, a.mask, a.label);
 
+  const { data: existente } = await supabaseAdmin
+    .from('bank_accounts')
+    .select('id')
+    .eq('bank', bank)
+    .eq('external_key', externalKey)
+    .maybeSingle();
+
+  const mutables = {
+    kind: a.kind, label: a.label, mask: a.mask ?? null,
+    currency: a.currency ?? 'CLP', updated_at: new Date().toISOString(),
+  };
+
+  if (existente) {
+    const { error } = await supabaseAdmin
+      .from('bank_accounts')
+      .update(mutables)
+      .eq('id', existente.id);
+    if (error) throw new Error(`No se pudo actualizar la cuenta "${a.label}": ${error.message}`);
+    return existente.id as string;
+  }
+
   const { data, error } = await supabaseAdmin
     .from('bank_accounts')
-    .upsert({
-      bank, kind: a.kind, label: a.label, mask: a.mask ?? null,
-      currency: a.currency ?? 'CLP', external_key: externalKey,
-      active: true, updated_at: new Date().toISOString(),
-    }, { onConflict: 'bank,external_key' })
+    .insert({ bank, external_key: externalKey, active: true, ...mutables })
     .select('id')
     .single();
 
-  if (error || !data) throw new Error(`No se pudo resolver la cuenta "${a.label}": ${error?.message}`);
+  if (error || !data) throw new Error(`No se pudo crear la cuenta "${a.label}": ${error?.message}`);
   return data.id as string;
 }
 
@@ -687,6 +715,11 @@ export async function getGastosOverview(txLimit = 50): Promise<GastosOverview> {
     supabaseAdmin
       .from('bank_transactions')
       .select('id, account_id, posted_date, amount, currency, description, source, card, installments')
+      // Solo de las cuentas visibles. Sin este filtro la lista traia movimientos de cuentas
+      // ocultas —y tambien los del fixture de scripts/test-bank-ingest.sh, que escribe sobre
+      // la base real bajo bank='bchile'—, asi que la vista mezclaba datos de prueba con
+      // gastos de verdad sin ninguna senal.
+      .in('account_id', accountIds)
       // Las filas retiradas no se muestran. No se borran nunca, solo se marcan.
       .is('missing_since', null)
       .order('posted_date', { ascending: false })
