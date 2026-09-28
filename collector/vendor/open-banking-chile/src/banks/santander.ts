@@ -1,5 +1,5 @@
 import type { Frame, Page } from "puppeteer-core";
-import type { BankMovement, BankScraper, MovementSource, ScrapeResult, ScraperOptions } from "../types.js";
+import type { BankMovement, BankScraper, CreditCardBalance, MovementSource, ScrapeResult, ScraperOptions } from "../types.js";
 import { MOVEMENT_SOURCE } from "../types.js";
 import { deduplicateMovements, closePopups, delay, normalizeDate, parseChileanAmount } from "../utils.js";
 import { createInterceptor } from "../intercept.js";
@@ -204,6 +204,63 @@ export function normalizeGenericApiMovements(
 
 /** Filas que el normalizador legado descartó por monto cero o ilegible en la última pasada. */
 export let skippedZeroAmount = 0;
+
+
+/**
+ * CAMBIO RESPECTO A UPSTREAM — estado de cuenta de la tarjeta desde ResumenEECCNacional.
+ *
+ * Ese endpoint no trae movimientos, por eso el normalizador daba 0, pero su respuesta es el
+ * estado de cuenta completo: cupo total, utilizado y disponible, deuda facturada y no
+ * facturada, pago minimo y fecha de vencimiento. Upstream ni lo registraba, asi que todos esos
+ * campos quedaban vacios aunque el banco los estuviera enviando.
+ *
+ * Los montos llegan como string, igual que en el resto de Santander.
+ */
+function parseResumenTarjeta(captures: unknown[]): Partial<CreditCardBalance> & { cuenta?: string } {
+  for (const capture of captures) {
+    const datos = (capture as {
+      DATA?: { "CO-CONResumenEECCNacional_Response"?: { OUTPUT?: { DatosGeneralesCuentasNacionales?: Record<string, unknown> } } };
+    })?.DATA?.["CO-CONResumenEECCNacional_Response"]?.OUTPUT?.DatosGeneralesCuentasNacionales;
+    if (!datos) continue;
+
+    const num = (k: string): number | undefined => {
+      const v = datos[k];
+      if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+      if (typeof v !== "string") return undefined;
+      // Punto de miles, coma decimal: la misma convencion chilena de siempre.
+      const limpio = v.trim().replace(/\./g, "").replace(",", ".");
+      const n = Number(limpio);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const txt = (k: string): string | undefined => {
+      const v = datos[k];
+      return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
+    };
+
+    const total = num("CupoPesos");
+    const usado = num("CupoUtilizado");
+    const disponible = num("CupoDisponible");
+
+    return {
+      cuenta: txt("Cuenta"),
+      national: total !== undefined || usado !== undefined || disponible !== undefined
+        ? { total: total ?? 0, used: usado ?? 0, available: disponible ?? 0 }
+        : undefined,
+      nextDueDate: txt("FechaVencimiento"),
+      billingPeriod: txt("FechaFacturaActual"),
+      periodExpenses: num("DeudaNoFacturada"),
+      lastStatement: num("DeudaFacturada") !== undefined
+        ? {
+            billingDate: txt("FechaFacturaActual") ?? "",
+            billedAmount: num("DeudaFacturada") ?? 0,
+            dueDate: txt("FechaVencimiento") ?? "",
+            minimumPayment: num("PagoMinimo"),
+          }
+        : undefined,
+    };
+  }
+  return {};
+}
 
 export function normalizeSantanderCheckingApiMovements(captures: unknown[]): BankMovement[] {
   skippedZeroAmount = 0;
@@ -661,6 +718,7 @@ async function scrapeSantander(
   const perAccount = new Map<string, BankMovement[]>();
   const cardMovements: BankMovement[] = [];
   let lastSelected: string | null = null;
+  let resumen: Partial<CreditCardBalance> & { cuenta?: string } = {};
 
   // Try API interception for checking account
   const checkingCaptures = await interceptor.waitFor("santander-checking", 10_000);
@@ -765,6 +823,11 @@ async function scrapeSantander(
       cardMovements.push(...movs);
     }
 
+    resumen = parseResumenTarjeta(interceptor.getAll("santander-credit-card-summary"));
+    if (resumen.national) {
+      debugLog.push(`  resumen de tarjeta: cupo y deuda leidos${resumen.cuenta ? ` (cuenta ${resumen.cuenta})` : ""}`);
+    }
+
     debugLog.push(`7b. Modo manual: ${cardMovements.length} movimiento(s) de tarjeta desde las capturas`);
   } else {
 
@@ -803,6 +866,9 @@ async function scrapeSantander(
   } else {
     debugLog.push("  Could not open credit card section.");
   }
+  }
+  if (!options.onPause) {
+    resumen = parseResumenTarjeta(interceptor.getAll("santander-credit-card-summary"));
   }
   movements = deduplicateMovements(movements);
 
@@ -854,8 +920,18 @@ async function scrapeSantander(
     success: true,
     bank,
     accounts: accountEntries,
-    creditCards: cardMovements.length > 0
-      ? [{ label: "Tarjeta de Crédito", movements: deduplicateMovements(cardMovements) }]
+    creditCards: cardMovements.length > 0 || resumen.national
+      ? [{
+          // El numero de cuenta que entrega el resumen sirve de identidad estable; sin el, la
+          // tarjeta quedaba con un label generico y sin mascara.
+          label: resumen.cuenta ? `Tarjeta de Crédito ${resumen.cuenta}` : "Tarjeta de Crédito",
+          movements: deduplicateMovements(cardMovements),
+          national: resumen.national,
+          nextDueDate: resumen.nextDueDate,
+          billingPeriod: resumen.billingPeriod,
+          periodExpenses: resumen.periodExpenses,
+          lastStatement: resumen.lastStatement,
+        }]
       : undefined,
     screenshot: ss,
     debug: debugLog.join("\n"),

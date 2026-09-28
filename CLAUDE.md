@@ -500,6 +500,20 @@ numero completo de tarjeta (las CHECK de `mask` y `card` hacen fallar el insert 
 regresiona y lo emite), y los screenshots del scraper, que traen saldos y el nombre del
 titular como pixeles. `bank_sync_runs.error` pasa por `sanitizeError()`.
 
+### Santander: la tarjeta, no la cuenta
+
+La cuenta corriente no se usa; las transacciones reales estan en la **tarjeta de credito**. Con
+`--manual` y navegando a la vista de facturacion, el banco responde y ahora se lee todo:
+
+- `consultaUltimosMovimientos` → movimientos por facturar
+- `estadoCuentaNacional` → movimientos facturados
+- `ResumenEECCNacional` → **el estado de cuenta**: `CupoPesos`, `CupoUtilizado`,
+  `CupoDisponible`, `DeudaFacturada`, `DeudaNoFacturada`, `PagoMinimo`, `FechaVencimiento`.
+  Upstream ni registraba este endpoint, asi que todos esos campos quedaban vacios aunque el
+  banco los estuviera enviando. Su campo `Cuenta` ademas da la identidad estable de la tarjeta,
+  que se reduce a mascara antes de llegar al payload.
+- `estadoDeCuenta` → devuelve `imgNbs64`, una imagen del estado de cuenta. No sirve para datos.
+
 ### Modo manual: cuando los selectores envejecen
 
 ```bash
@@ -524,7 +538,7 @@ permitiria despues llamar al endpoint directo con el rango de fechas que uno qui
 |---|---|---|---|---|
 | `bchile` | ok, **sin clave dinamica** | ok (35 mov, fechas correctas) | **$0 real**, no un fallo | sin tarjeta en esta cuenta |
 | `edwards` | ok | ok (20 mov) pero **desactivado** | ok ($50.000) | pestanas no encontradas |
-| `santander` | ok, sin clave dinamica en la primera corrida | **roto**: 0 mov en las 3 cuentas, por API y por HTML | ok ($60.146) | **roto**: pestanas no encontradas |
+| `santander` | ok, credenciales guardadas | cuenta corriente sin movimientos (no la usa) | ok ($60.146) | **ok con `--manual`**: 23 mov + cupo y deuda |
 
 **Edwards esta vendorizado pero NO registrado en `SCRAPERS`.** Es una marca de Banco de Chile y,
 en esta cuenta, el mismo producto: `bchile` reporta "Found 1 products" y Edwards muestra una sola

@@ -161,7 +161,7 @@ const getArg = (name: string): string | undefined => {
  * medio entre "no escribir nada" y "escribir en la base", adivinar la intención no corresponde.
  */
 const KNOWN_FLAGS = ['--complete', '--confirm', '--headful', '--screenshots', '--debug', '--manual'];
-const KNOWN_OPTS = ['--bank', '--from', '--to', '--chrome'];
+const KNOWN_OPTS = ['--bank', '--from', '--to', '--chrome', '--wait'];
 
 function assertKnownArgs() {
   const unknown = args.filter(a => {
@@ -704,7 +704,19 @@ async function main() {
       ...(manual ? {
         onPause: async (message: string) => {
           console.log(`\n  ${message}`);
-          await ask('  Cuando estés listo, presiona Enter: ', false);
+          // Con --wait=N corre sin teclado. Hace falta porque quien lanza el proceso no siempre
+          // es quien navega: manejado desde WSL contra Windows, el prompt cae en una terminal
+          // que la persona no puede escribir, mientras el navegador se abre en su pantalla.
+          const espera = Number(getArg('wait') ?? NaN);
+          if (Number.isFinite(espera)) {
+            console.log(`  Esperando ${espera}s. No hace falta tocar esta consola.`);
+            for (let queda = espera; queda > 0; queda -= 30) {
+              await new Promise(r => setTimeout(r, Math.min(30, queda) * 1000));
+              if (queda > 30) console.log(`    quedan ~${queda - 30}s`);
+            }
+          } else {
+            await ask('  Cuando estés listo, presiona Enter: ', false);
+          }
         },
       } : {}),
     });
