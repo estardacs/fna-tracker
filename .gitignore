@@ -54,6 +54,8 @@ scripts/.bin/
 
 # colector bancario
 collector/node_modules/
+# Credenciales bancarias: archivo propio, nunca versionado.
+collector/.env.banks
 collector/debug/
 collector/*.log
 collector/.last-run.json

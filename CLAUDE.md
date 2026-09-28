@@ -632,17 +632,47 @@ La primera version de este colector esperaba 30 minutos entre corridas cualesqui
 README de upstream, que lo afirma en prosa — sin fuente, con un "puede", y sin una sola linea de
 codigo que lo implemente. Hacia esperar por un riesgo inexistente y no cubria el real.
 
-Ahora hay dos guardas, en `collector/.last-run.json` (ignorado por git):
+Queda **una sola guarda**, en `collector/.last-run.json` (ignorado por git): dos logins fallidos
+seguidos frenan ese banco, cortando en 2 para dejar el tercer intento —el que bloquea— fuera del
+alcance de un selector roto. Un login exitoso reinicia el contador, y un fallo previo al banco
+(Chrome ausente, por ejemplo) no cuenta.
 
-- **Dos logins fallidos seguidos frenan ese banco.** Se corta en 2 para dejar el tercer intento
-  —el que bloquea— fuera del alcance de un selector roto. Un login exitoso reinicia el contador,
-  y un fallo previo al banco (Chrome ausente, por ejemplo) no cuenta.
-- **Cinco minutos entre corridas**, solo para atajar un bucle accidental.
+**No hay minimo de tiempo entre corridas.** No serviria: Santander corre Akamai Bot Manager
+(`_bm/` es ruta reservada de Akamai), BioCatch (`Biocatch/getScore`, los `wup-*`) y Dynatrace, y
+esas defensas puntuan la sesion por huella y comportamiento, no por cada cuanto corres. Esperar
+no cambia nada frente a ellas y estorba al depurar. Lo que si ayuda ahi es `--manual`.
 
-Ese minimo **no pretende evadir la deteccion de bots**. Santander corre Akamai Bot Manager
-(`_bm/` es ruta reservada de Akamai), BioCatch (`Biocatch/getScore`, los `wup-*`) y Dynatrace.
-Esas defensas puntuan la sesion por huella y comportamiento, no por cada cuanto corres, asi que
-esperar no cambia nada frente a ellas. Lo que si ayuda ahi es `--manual`.
+### Credenciales: `collector/.env.banks`
+
+```
+BANK_RUT=12345678-9
+BCHILE_PASS=...
+SANTANDER_PASS=...
+```
+
+Archivo propio, ignorado por git, con plantilla en `.env.banks.example`. Vive **aparte de
+`.env.local`** a proposito: ese tiene la `SUPABASE_SERVICE_ROLE_KEY`, y un proceso que ejecuta
+codigo de scraping de terceros no deberia tener ambas cosas a mano. Cada archivo se lee con su
+propia lista blanca.
+
+Lo que falte se sigue pidiendo por stdin. Guardar la clave es una decision del usuario:
+teclearla cada vez es mas seguro, pero hace inviable automatizar y los errores de tipeo cuentan
+como intento fallido contra el limite del banco.
+
+### Ejecutar en Windows desde WSL
+
+El colector necesita Chrome nativo, asi que corre como proceso **Windows**. Desde WSL eso se
+maneja con interop, sin pedirle a nadie que abra PowerShell:
+
+```bash
+/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile \
+  -Command "cd C:\Users\conch\fna-tracker; npm run sync-banks -- --bank=bchile"
+```
+
+`git -C /mnt/c/Users/conch/fna-tracker pull` tambien funciona. Lo unico que sigue necesitando a
+una persona es el `git push` desde WSL, la aprobacion de clave dinamica cuando el banco la pida,
+y la navegacion de `--manual`. El `.env.banks` debe existir del **lado Windows**, porque es ahi
+donde corre el proceso.
 
 Nunca agregar un cron para esto. **El colector jamas debe ejecutar una accion de escritura en el
 banco** --- sin transferencias, sin pagos, solo lectura.

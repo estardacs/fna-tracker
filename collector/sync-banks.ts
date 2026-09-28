@@ -40,6 +40,39 @@ const TZ = 'America/Santiago';
  */
 const ALLOWED_ENV = ['BANK_INGEST_TOKEN', 'FNA_BASE_URL', 'CHROME_PATH'] as const;
 
+/**
+ * Las credenciales bancarias viven en su PROPIO archivo, `collector/.env.banks`, no en
+ * `.env.local`.
+ *
+ * Separarlas no es ceremonia: `.env.local` tiene la SUPABASE_SERVICE_ROLE_KEY, y un proceso que
+ * ejecuta codigo de scraping de terceros no deberia tener ambas cosas a mano. Cada archivo se
+ * lee con su propia lista blanca, asi que ninguno filtra en el otro.
+ *
+ * Formato (una por linea):
+ *   BANK_RUT=12345678-9        # compartido por todos los bancos
+ *   BCHILE_PASS=...
+ *   SANTANDER_PASS=...
+ *   BCHILE_RUT=...             # opcional, si algun banco usa otro RUT
+ *
+ * Lo que falte se pide por stdin, como antes. Guardar la clave es una decision del usuario:
+ * teclearla en cada corrida es mas seguro, pero hace inviable automatizar y provoca errores de
+ * tipeo que cuentan como intento fallido.
+ */
+const CRED_FILE = join(HERE, '.env.banks');
+
+function loadBankCredentials() {
+  if (!existsSync(CRED_FILE)) return;
+  const raw = readFileSync(CRED_FILE, 'utf8').replace(/^\uFEFF/, '');
+  for (const line of raw.split(/\r?\n/)) {
+    const m = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m) continue;
+    const [, key, value] = m;
+    // Solo lo que parece credencial bancaria; nada mas entra al entorno desde este archivo.
+    if (!/^(BANK_RUT|[A-Z]+_(RUT|PASS))$/.test(key)) continue;
+    if (!process.env[key]) process.env[key] = value.trim().replace(/^["']|["']$/g, '');
+  }
+}
+
 function loadEnv() {
   for (const candidate of [join(process.cwd(), '.env.local'), join(HERE, '..', '.env.local')]) {
     if (!existsSync(candidate)) continue;
@@ -60,6 +93,7 @@ function loadEnv() {
 }
 
 loadEnv();
+loadBankCredentials();
 
 /**
  * Lo que de verdad bloquea una cuenta bancaria son los INTENTOS FALLIDOS, no la frecuencia.
@@ -73,13 +107,13 @@ loadEnv();
  * de codigo que lo implemente. Hacia esperar por un riesgo inexistente y no cubria el real.
  *
  * Ahora son dos guardas distintas:
- *   - Dos logins fallidos seguidos frenan el banco. Se corta en 2 para dejar el tercer intento
- *     —el que bloquea— en tus manos y no en las de un selector roto.
- *   - Un minimo corto entre corridas, solo para atajar un bucle accidental. No pretende evadir
- *     la deteccion de bots: Akamai Bot Manager y BioCatch puntuan la sesion por huella y
- *     comportamiento, no por cada cuanto corres.
+ * Queda una sola guarda: dos logins fallidos seguidos frenan el banco, cortando en 2 para dejar
+ * el tercer intento —el que bloquea— fuera del alcance de un selector roto.
+ *
+ * No hay minimo de tiempo entre corridas. No serviria: Akamai Bot Manager y BioCatch puntuan la
+ * sesion por huella y comportamiento, no por cada cuanto corres, asi que esperar no cambia nada
+ * frente a ellos y si estorba al depurar.
  */
-const MIN_MINUTES_BETWEEN_RUNS = 5;
 const MAX_CONSECUTIVE_LOGIN_FAILURES = 2;
 
 /** Mensajes con los que el scraper reporta que el banco rechazo las credenciales. */
@@ -325,14 +359,6 @@ function assertRateLimit(bank: BankId) {
     process.exit(1);
   }
 
-  const minutes = (Date.now() - new Date(last.at).getTime()) / 60_000;
-  if (minutes < MIN_MINUTES_BETWEEN_RUNS) {
-    console.error(
-      `La ultima corrida de ${bank} fue hace ${Math.floor(minutes)} min. ` +
-      `Espera ${Math.ceil(MIN_MINUTES_BETWEEN_RUNS - minutes)} min.`,
-    );
-    process.exit(1);
-  }
 }
 
 function recordRun(bank: BankId) {
@@ -645,8 +671,16 @@ async function main() {
     process.exit(1);
   }
 
-  const rut = await ask('RUT (12345678-9): ', false);
-  const password = await ask('Clave de internet: ', true);
+  // Lo guardado gana; lo que falte se pregunta.
+  const prefix = bank.toUpperCase();
+  const storedRut = process.env[`${prefix}_RUT`] ?? process.env.BANK_RUT;
+  const storedPass = process.env[`${prefix}_PASS`];
+
+  const rut = storedRut ?? await ask('RUT (12345678-9): ', false);
+  const password = storedPass ?? await ask('Clave de internet: ', true);
+
+  if (storedRut && storedPass) console.log('Credenciales tomadas de collector/.env.banks');
+  else if (storedRut || storedPass) console.log('Credenciales parciales en collector/.env.banks');
   const secrets = [password, rut];
   if (!rut || !password) {
     console.error('RUT y clave son obligatorios.');
