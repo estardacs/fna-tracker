@@ -39,20 +39,40 @@ export default function AccountCards({ accounts }: { accounts: AccountView[] }) 
             </div>
 
             {isCard ? (
+              /* El numero grande es el CUPO DISPONIBLE, no el usado.
+                 Dos razones. La ficha antes encabezaba con `natUsed`, que la API de Santander
+                 devuelve en 0, asi que mostraba "$0 / usado de $0" mientras la deuda real de
+                 $439.039 no aparecia en ninguna parte. Y entre disponible y deuda, el
+                 disponible es el que puede ocupar esta posicion: en esta grilla el numero
+                 grande significa "plata con la que cuento", asi que poner ahi una deuda la
+                 haria leerse como saldo a favor. La deuda va abajo, dicha con todas sus
+                 letras. */
               <div className="mt-4 space-y-1">
                 <p className="text-2xl font-semibold text-gray-100 tabular-nums">
-                  {money(a.natUsed, a.currency)}
+                  {money(a.natAvailable, a.currency)}
                 </p>
                 <p className="text-[11px] text-gray-500">
-                  usado de {money(a.natTotal, a.currency)}
-                  {a.natAvailable !== null && ` · disponible ${money(a.natAvailable, a.currency)}`}
+                  cupo disponible
+                  {a.natTotal !== null && a.natTotal > 0 && ` de ${money(a.natTotal, a.currency)}`}
                 </p>
+                {a.stmtBilledAmount !== null && a.stmtBilledAmount > 0 && (
+                  <p className="text-[11px] text-gray-400 pt-1">
+                    deuda facturada{' '}
+                    <span className="text-gray-200 tabular-nums">
+                      {money(a.stmtBilledAmount, a.currency)}
+                    </span>
+                    {a.stmtMinimum !== null && a.stmtMinimum > 0 &&
+                      ` · mínimo ${money(a.stmtMinimum, a.currency)}`}
+                  </p>
+                )}
                 {a.nextDueDate && (
                   <p className="text-[11px] text-amber-400/80">
                     vence {shortDate(a.nextDueDate)}
                   </p>
                 )}
-                {a.periodExpenses !== null && (
+                {/* Los campos que el banco manda en 0 se omiten: un "gastos del período $0"
+                    afirma que no gastaste nada, que es distinto de que el banco no lo diga. */}
+                {a.periodExpenses !== null && a.periodExpenses > 0 && (
                   <p className="text-[11px] text-gray-500">
                     gastos del período {money(a.periodExpenses, a.currency)}
                   </p>

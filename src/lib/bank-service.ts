@@ -602,6 +602,9 @@ export interface AccountView {
   natTotal: number | null;
   nextDueDate: string | null;
   periodExpenses: number | null;
+  /** Deuda ya facturada: para una tarjeta es el numero que de verdad importa. */
+  stmtBilledAmount: number | null;
+  stmtMinimum: number | null;
 }
 
 export interface TransactionView {
@@ -677,7 +680,7 @@ export async function getGastosOverview(txLimit = 50): Promise<GastosOverview> {
     // primero de cada cuenta. Acotado y suficiente para "saldo actual".
     supabaseAdmin
       .from('bank_balance_snapshots')
-      .select('account_id, captured_at, balance, nat_used, nat_available, nat_total, next_due_date, period_expenses')
+      .select('account_id, captured_at, balance, nat_used, nat_available, nat_total, next_due_date, period_expenses, stmt_billed_amount, stmt_minimum')
       .in('account_id', accountIds)
       .order('captured_at', { ascending: false })
       .limit(400),
@@ -716,6 +719,8 @@ export async function getGastosOverview(txLimit = 50): Promise<GastosOverview> {
       natTotal: s?.nat_total ?? null,
       nextDueDate: s?.next_due_date ?? null,
       periodExpenses: s?.period_expenses ?? null,
+      stmtBilledAmount: s?.stmt_billed_amount ?? null,
+      stmtMinimum: s?.stmt_minimum ?? null,
     };
   });
 
