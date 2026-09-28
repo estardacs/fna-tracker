@@ -16,7 +16,7 @@
  *   npm run sync-banks -- --bank=bchile --from=2026-09-01 --to=2026-09-26 --confirm
  *   npm run sync-banks -- --bank=bchile --complete --confirm   # habilita reconciliación
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -761,8 +761,24 @@ async function main() {
   if (debug && result.debug) {
     // Redactado, pero igual puede contener descripciones de movimientos y saldos: es para
     // mirar en pantalla, no para pegar en ninguna parte.
+    const texto = redact(result.debug, secrets);
     console.log('\n─── debug del scraper ───');
-    console.log(redact(result.debug, secrets));
+    console.log(texto);
+
+    // Y ademas a disco. Este log es la unica forma de saber por que un selector fallo, y
+    // cada corrida cuesta un login contra el banco: perderlo porque se cerro la terminal
+    // significa gastar otro login para recuperar lo mismo. collector/debug/ esta en
+    // .gitignore, y el contenido ya paso por redact().
+    try {
+      const dir = join(HERE, 'debug');
+      mkdirSync(dir, { recursive: true });
+      const sello = new Date().toISOString().replace(/[:.]/g, '-');
+      const archivo = join(dir, `${bank}-${sello}.log`);
+      writeFileSync(archivo, texto, { mode: 0o600 });
+      console.log(`\n  log guardado en collector/debug/${bank}-${sello}.log`);
+    } catch (e) {
+      console.log(`  (no se pudo guardar el log: ${(e as Error).message})`);
+    }
   }
 
   if (!confirm) {
