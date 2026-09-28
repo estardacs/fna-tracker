@@ -509,6 +509,47 @@ async function navigateToMovements(page: Page, debugLog: string[]): Promise<void
   }
 }
 
+// CAMBIO RESPECTO A UPSTREAM — navegar a la tarjeta por URL en vez de por clics.
+//
+// Esta ruta salio de una corrida en modo manual, que registra la URL a la que llego la
+// persona. Importa porque en un scraper lo primero que envejece son los selectores de
+// navegacion, no los endpoints: dos sondas automaticas mostraron que el clic en "Mis Tarjetas
+// de Credito" ni siquiera cierra el cajon de navegacion —cae en un span decorativo— mientras
+// los cuatro endpoints de tarjeta respondian perfecto. Una ruta con hash de una app de
+// micro-frontends es un contrato mucho mas estable que la etiqueta de un boton.
+// Las DOS vistas, porque cada una dispara su propio endpoint. Ir solo a billed trajo 22 de 23
+// movimientos: el que falta es el unico por facturar, y su POST a consultaUltimosMovimientos
+// no ocurre si esa pestana no se abre.
+//
+// Los nombres no se adivinaron. Adivinar cuesta un login por intento contra un banco que
+// cuenta los intentos fallidos, asi que se leyeron de la tabla de rutas del propio bundle
+// —remoteEntrySaldos_TC.js y sus chunks son estaticos y publicos, no hace falta sesion—:
+// los hermanos bajo `main` son `detail`, `bill`, `billed` y `sin-productos`, con el default
+// redirigiendo a `detail`. Por eso es `bill` y no `unbilled`, que fue mi primera suposicion
+// y devolvio cero capturas.
+const CARD_ROUTES = [
+  ["por facturar", "/UI.Web.HB/Private_new/frame/#/private/Saldos_TC/main/bill"],
+  ["facturado", "/UI.Web.HB/Private_new/frame/#/private/Saldos_TC/main/billed"],
+] as const;
+
+async function goToCardByUrl(page: Page, debugLog: string[], ruta: string): Promise<boolean> {
+  try {
+    const actual = new URL(page.url());
+    // Tras el login el host ya es mibanco; el fallback cubre quedarse en el sitio publico.
+    const host = /mibanco\./.test(actual.host) ? actual.host : "mibanco.santander.cl";
+    const destino = `${actual.protocol}//${host}${ruta}`;
+    debugLog.push(`  navegando por URL a ${destino}`);
+    // domcontentloaded y no networkidle: Akamai, BioCatch y Dynatrace mandan beacons todo el
+    // tiempo, asi que la red nunca queda inactiva. Lo que de verdad indica que cargo es la
+    // respuesta del endpoint, y para eso esta interceptor.waitFor.
+    await page.goto(destino, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    return true;
+  } catch (e) {
+    debugLog.push(`  no se pudo navegar por URL: ${(e as Error).message}`);
+    return false;
+  }
+}
+
 async function navigateToCreditCardSection(page: Page, debugLog: string[]): Promise<boolean> {
   // Open Tarjetas submenu
   const tarjetasClicked = await clickSidebarItem(
@@ -819,15 +860,16 @@ async function scrapeSantander(
 
   // 7b. Credit card movements
   //
-  // CAMBIO RESPECTO A UPSTREAM — en modo manual se leen las capturas directamente.
+  // CAMBIO RESPECTO A UPSTREAM — las capturas del interceptor son la fuente, no los clics.
   //
-  // Upstream solo consume lo capturado si `clickTcTab` logra abrir la pestana. Cuando la
-  // persona ya navego a mano, el banco YA respondio con sus movimientos y esos clics fallan
-  // —la pantalla no es la que el selector espera—, de modo que la respuesta correcta se
-  // descartaba en silencio. Esto fue exactamente lo que paso: los POST a
-  // consultaUltimosMovimientos y estadoCuentaNacional aparecen en el volcado de endpoints y
-  // aun asi el resultado tenia 0 movimientos de tarjeta.
-  if (options.onPause) {
+  // Upstream solo consume lo capturado si `clickTcTab` logra abrir la pestana, asi que cuando
+  // la pantalla no es la que el selector espera descarta en silencio una respuesta correcta.
+  // Paso exactamente eso: los POST a consultaUltimosMovimientos y estadoCuentaNacional
+  // aparecian en el volcado de endpoints y el resultado traia 0 movimientos de tarjeta.
+  //
+  // leerCapturas es idempotente —vacia el arreglo antes de llenarlo— para poder llamarla otra
+  // vez si el camino de respaldo navega a otra pantalla.
+  const leerCapturas = (etiqueta: string): void => {
     const fuentes: Array<[string, MovementSource]> = [
       ["santander-credit-card-unbilled", MOVEMENT_SOURCE.credit_card_unbilled],
       ["santander-credit-card-billed", MOVEMENT_SOURCE.credit_card_billed],
@@ -835,6 +877,7 @@ async function scrapeSantander(
       ["santander-credit-card-summary", MOVEMENT_SOURCE.credit_card_billed],
     ];
 
+    cardMovements.length = 0;
     for (const [id, source] of fuentes) {
       const capturas = interceptor.getAll(id);
       if (capturas.length === 0) continue;
@@ -856,18 +899,38 @@ async function scrapeSantander(
       debugLog.push(`  resumen de tarjeta: cupo y deuda leidos${resumen.cuenta ? ` (cuenta ${resumen.cuenta})` : ""}`);
     }
 
-    debugLog.push(`7b. Modo manual: ${cardMovements.length} movimiento(s) de tarjeta desde las capturas`);
-  } else {
+    debugLog.push(`7b. ${etiqueta}: ${cardMovements.length} movimiento(s) de tarjeta desde las capturas`);
+  };
 
-  debugLog.push("7b. Navigating to credit card movements...");
+  if (options.onPause) {
+    leerCapturas("modo manual");
+  } else {
+  debugLog.push("7b. Navegando a la tarjeta por URL...");
   progress("Extrayendo movimientos de tarjeta de crédito...");
+  for (const [nombre, ruta] of CARD_ROUTES) {
+    if (!(await goToCardByUrl(page, debugLog, ruta))) continue;
+    // La respuesta del endpoint es la senal de que la vista cargo de verdad. Un hash distinto
+    // sobre el mismo documento puede no recargar nada, asi que el timeout corto no es un
+    // problema: lo que importa es que las capturas se acumulan en el interceptor.
+    const id = nombre === "facturado"
+      ? "santander-credit-card-billed"
+      : "santander-credit-card-unbilled";
+    await interceptor.waitFor(id, 20_000);
+    await delay(2500);
+  }
+  leerCapturas("por URL");
+
+  // Respaldo: solo si la URL no dejo nada. Este camino se sabe fragil —es el de los clics—
+  // pero ya esta escrito y no cuesta nada dejarlo por si la ruta cambia antes que el menu.
+  if (cardMovements.length === 0) {
+    debugLog.push("  la URL no dejo capturas de tarjeta; probando la navegacion por clics");
+
   const tcReady = await navigateToCreditCardSection(page, debugLog);
   if (tcReady) {
     // DIAGNOSTICO (cambio respecto a upstream): si la pestana no se encuentra, volcar los
-    // textos clickeables de la pantalla. Es lo unico que falta para automatizar esto: el
-    // scraper YA llega solo a "Mis Tarjetas de Credito", falla al elegir la pestana porque sus
-    // etiquetas cambiaron. Con los textos reales se corrigen los selectores y no hace falta
-    // que nadie navegue nunca mas.
+    // textos clickeables de la pantalla. Sirve para reconstruir los selectores si algun dia
+    // hay que volver a este camino; el volcado que lo diagnostico mostro que el clic en "Mis
+    // Tarjetas de Credito" no cierra siquiera el cajon de navegacion.
     const porFacturar = await clickTcTab(page, "movimientos por facturar");
     if (!porFacturar) {
       // La tarjeta se dibuja como imagen dentro de un carrusel, no como texto, asi que un
@@ -924,9 +987,8 @@ async function scrapeSantander(
   } else {
     debugLog.push("  Could not open credit card section.");
   }
-  }
-  if (!options.onPause) {
     resumen = parseResumenTarjeta(interceptor.getAll("santander-credit-card-summary"));
+  }
   }
   movements = deduplicateMovements(movements);
 
@@ -970,7 +1032,14 @@ async function scrapeSantander(
   // exactamente de la que el número proviene, y el debug log deja constancia de a cuál fue.
   const owner = lastSelected ?? accounts[0]?.label ?? null;
   if (balance !== undefined && perAccount.size > 1) {
-    debugLog.push(`  saldo $${balance.toLocaleString("es-CL")} atribuido a: ${owner}`);
+    // Santander entrega el numero de cuenta COMPLETO como etiqueta. El payload pasa por
+    // maskAccountLabel() en el colector, pero este log no pasaba por ninguna parte y lo
+    // imprimia entero; el log ahora se guarda en disco, asi que reducirlo importa mas.
+    const digitos = (owner ?? "").replace(/\D/g, "");
+    const visible = digitos.length >= 4
+      ? `${(owner ?? "").replace(/[\d\s]+$/, "").trim()} ****${digitos.slice(-4)}`.trim()
+      : (owner ?? "—");
+    debugLog.push(`  saldo $${balance.toLocaleString("es-CL")} atribuido a: ${visible}`);
   }
 
   const accountEntries =

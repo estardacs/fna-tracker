@@ -514,23 +514,54 @@ La cuenta corriente no se usa; las transacciones reales estan en la **tarjeta de
   que se reduce a mascara antes de llegar al payload.
 - `estadoDeCuenta` → devuelve `imgNbs64`, una imagen del estado de cuenta. No sirve para datos.
 
-### Modo manual: cuando los selectores envejecen
+### Navegar por URL, no por clics
+
+Santander corre automatico: `npm run sync-banks -- --bank=santander --confirm`. Llega solo a la
+tarjeta yendo **directo a la ruta**, no haciendo clic en el menu:
+
+```
+/UI.Web.HB/Private_new/frame/#/private/Saldos_TC/main/bill     (por facturar)
+/UI.Web.HB/Private_new/frame/#/private/Saldos_TC/main/billed   (facturados)
+```
+
+Hay que visitar **las dos**, porque cada vista dispara su propio endpoint: ir solo a `billed`
+trae 22 de 23 movimientos y el que falta es justamente el unico por facturar.
+
+En un scraper lo primero que envejece son los selectores de navegacion, no los endpoints, y
+Santander lo demostro al extremo: sus cuatro endpoints de tarjeta respondian perfecto mientras
+el clic en "Mis Tarjetas de Credito" ni siquiera cerraba el cajon de navegacion —caia en un
+`span` decorativo—. Una ruta con hash de una app de micro-frontends es un contrato mucho mas
+estable que la etiqueta de un boton.
+
+**Los nombres de ruta no se adivinan: se leen del bundle.** `remoteEntrySaldos_TC.js` y sus 55
+chunks son estaticos y publicos —no hace falta sesion— asi que un `curl` y un grep de `path:"`
+dan la tabla de rutas entera: `detail`, `bill`, `billed`, `sin-productos`. Es como se supo que
+era `bill` y no `unbilled`, que fue la primera suposicion y devolvio cero capturas. Adivinar
+cuesta un login por intento contra un banco que cuenta los intentos fallidos; leer el bundle
+cuesta cero.
+
+### Modo manual: para cuando la ruta envejezca
 
 ```bash
 npm run sync-banks -- --bank=santander --manual --debug
 ```
 
-El scraper inicia sesion y **te entrega el navegador**: navegas a Movimientos a mano, presionas
-Enter, y el interceptor captura la misma respuesta del banco. Implica ventana visible.
+El scraper inicia sesion y **te entrega el navegador**: navegas a mano, presionas Enter, y el
+interceptor captura la misma respuesta del banco. Implica ventana visible. Ya no hace falta en
+la operacion normal, pero **registra la URL a la que llegaste**, que es exactamente como se
+obtuvo la ruta de arriba: es la via para reconstruirla cuando el portal cambie.
 
-En un scraper lo primero que envejece son los selectores de navegacion, no los endpoints.
-Santander lo demostro: su endpoint de transacciones responde perfecto, pero `navigateToMovements`
-a veces llega al dashboard y a veces termina en una pagina promocional de la app. Adivinar
-selectores a ciegas cuesta un login por intento contra un banco que corre biometria de
-comportamiento. Un humano encuentra "Movimientos" a la primera.
+Es ademas la forma practica de capturar el cuerpo del POST de transacciones. Las formas ya
+estan en el debug log, y muestran que son muy dependientes de la sesion (`RutCliente`,
+`InfoDispositivo`, `USUARIO-ALT`, `TERMINAL-ALT`), asi que reproducirlos a ciegas no es
+realista — otra razon por la que navegar por URL le gana a reconstruir requests.
 
-Es ademas la forma practica de capturar el cuerpo del POST de transacciones, que es lo que
-permitiria despues llamar al endpoint directo con el rango de fechas que uno quiera.
+### El log del scraper queda en disco
+
+`--debug` guarda en `collector/debug/<banco>-<fecha>.log` (ignorado por git, escrito 0600, ya
+pasado por `redact()`) ademas de imprimir. El log es la unica forma de saber por que fallo un
+selector y cada corrida cuesta un login: perderlo por cerrar la terminal significa gastar otro
+login para recuperar lo mismo.
 
 ### Estado por banco
 
@@ -538,7 +569,7 @@ permitiria despues llamar al endpoint directo con el rango de fechas que uno qui
 |---|---|---|---|---|
 | `bchile` | ok, **sin clave dinamica** | ok (35 mov, fechas correctas) | **$0 real**, no un fallo | sin tarjeta en esta cuenta |
 | `edwards` | ok | ok (20 mov) pero **desactivado** | ok ($50.000) | pestanas no encontradas |
-| `santander` | ok, credenciales guardadas | cuenta corriente sin movimientos (no la usa) | ok ($60.146) | **ok con `--manual`**: 23 mov + cupo y deuda |
+| `santander` | ok, credenciales guardadas | cuenta corriente sin movimientos (no la usa) | ok ($60.146) | **ok automatico**: 23 mov + cupo y deuda |
 
 **Edwards esta vendorizado pero NO registrado en `SCRAPERS`.** Es una marca de Banco de Chile y,
 en esta cuenta, el mismo producto: `bchile` reporta "Found 1 products" y Edwards muestra una sola
