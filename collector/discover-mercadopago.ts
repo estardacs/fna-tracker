@@ -51,22 +51,54 @@ function ask(question: string): Promise<void> {
 }
 
 async function main() {
-  const chromePath = findChrome(process.env.CHROME_PATH);
-  if (!chromePath) {
-    console.error('No se encontró Chrome. Pasa CHROME_PATH.');
-    process.exit(1);
+  /**
+   * Dos modos, y `--attach` es el que sirve contra MercadoPago.
+   *
+   * Lanzar Chrome con puppeteer lo marca como automatizado: pone `--enable-automation`, deja
+   * `navigator.webdriver` en true y arranca con un perfil sin historial ni cookies. MercadoPago
+   * lo detecta y bloquea el login —pasó, y costó intentos de una cuenta real—, mientras que los
+   * bancos no lo hacen porque el `browser.ts` vendorizado oculta esas señales.
+   *
+   * Con `--attach` no se lanza nada: la persona abre SU Chrome con un puerto de depuración,
+   * entra como cualquier día, y acá solo nos conectamos a observar respuestas. Sin flags de
+   * automatización, porque no fuimos nosotros quienes abrimos el navegador.
+   */
+  const attach = process.argv.includes('--attach');
+  let browser;
+
+  if (attach) {
+    const puerto = process.argv.find(a => a.startsWith('--port='))?.slice(7) ?? '9222';
+    try {
+      browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${puerto}` });
+    } catch {
+      console.error(`No hay un Chrome escuchando en 127.0.0.1:${puerto}.`);
+      console.error('Ábrelo así, y despues vuelve a correr esto:');
+      console.error('  chrome.exe --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\\chrome-fna"');
+      process.exit(1);
+    }
+    console.log(`Conectado a tu Chrome en el puerto ${puerto}. No voy a navegar ni hacer clic.`);
+  } else {
+    const chromePath = findChrome(process.env.CHROME_PATH);
+    if (!chromePath) {
+      console.error('No se encontró Chrome. Pasa CHROME_PATH.');
+      process.exit(1);
+    }
+    console.log('⚠  Lanzando Chrome con puppeteer. MercadoPago detecta esto y bloquea el login;');
+    console.log('   para ese sitio usa --attach.');
+    browser = await puppeteer.launch({
+      executablePath: chromePath,
+      headless: false,
+      args: ['--disable-dev-shm-usage', '--window-size=1280,900'],
+    });
   }
 
-  const browser = await puppeteer.launch({
-    executablePath: chromePath,
-    headless: false,
-    args: ['--disable-dev-shm-usage', '--window-size=1280,900'],
-  });
-  const page = (await browser.pages())[0] ?? await browser.newPage();
+  const pages = await browser.pages();
+  const page = pages[pages.length - 1] ?? await browser.newPage();
 
   const endpoints = new Set<string>();
   const formas = new Map<string, string>();
 
+  function observar(page: import('puppeteer-core').Page) {
   page.on('request', req => {
     try {
       const u = new URL(req.url());
@@ -89,8 +121,20 @@ async function main() {
         .catch(() => { /* no era JSON */ });
     } catch { /* ignorar */ }
   });
+  }
 
-  await page.goto('https://www.mercadopago.cl/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  if (!attach) {
+    await page.goto('https://www.mercadopago.cl/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  }
+
+  // Observar TODAS las pestañas: la persona puede abrir el saldo en una nueva.
+  browser.on('targetcreated', async (target) => {
+    try {
+      const nueva = await target.page();
+      if (nueva) observar(nueva);
+    } catch { /* no era una página */ }
+  });
+  for (const p of await browser.pages()) observar(p);
 
   console.log('\nChrome abierto. Entra a tu cuenta (con el código al celular si lo pide),');
   console.log('anda a donde se ve tu saldo y tus cuentas de ahorro, y déjalo a la vista.');
@@ -112,7 +156,8 @@ async function main() {
   }
 
   await new Promise(r => setTimeout(r, 2000));
-  await browser.close();
+  // En attach se suelta la conexión: cerrar el Chrome de la persona seria una groseria.
+  if (attach) browser.disconnect(); else await browser.close();
 
   const relevantes = [...endpoints].filter(e => INTERESANTES.test(e)).sort();
   console.log(`\n${endpoints.size} llamadas observadas, ${relevantes.length} que suenan a saldo:\n`);
