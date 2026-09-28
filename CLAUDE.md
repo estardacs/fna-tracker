@@ -522,7 +522,7 @@ permitiria despues llamar al endpoint directo con el rango de fechas que uno qui
 
 | banco | login | cuenta | saldo | tarjeta |
 |---|---|---|---|---|
-| `bchile` | ok, **sin clave dinamica** | ok (35 mov, fechas correctas) | fallback agregado; el 0 anterior era falso | sin tarjeta en esta cuenta |
+| `bchile` | ok, **sin clave dinamica** | ok (35 mov, fechas correctas) | **$0 real**, no un fallo | sin tarjeta en esta cuenta |
 | `edwards` | ok | ok (20 mov) pero **desactivado** | ok ($50.000) | pestanas no encontradas |
 | `santander` | ok, sin clave dinamica en la primera corrida | **roto**: 0 mov en las 3 cuentas, por API y por HTML | ok ($60.146) | **roto**: pestanas no encontradas |
 
@@ -533,7 +533,12 @@ dos crearia DOS cuentas con los mismos movimientos duplicados y nada los dedupli
 domina de todos modos: 35 movimientos desde el 13-08 contra 20 desde el 01-09, y entrega la
 mascara real que Edwards no da. En la UI, `edwards` se muestra como "Banco de Chile".
 
-De paso, el saldo de $50.000 que leyo Edwards confirmo que el 0 de `bchile` era falso.
+**Correccion:** llegue a escribir que los $50.000 que leyo Edwards probaban que el 0 de `bchile`
+era falso. No era asi. Con el fallback puesto, el endpoint de saldos responde
+`saldos: 1 cuenta(s), tipos=CUENTA_VISTA` y `Balance CLP: $0`: el saldo es **genuinamente cero**,
+y cuadra con que cargos y abonos se cancelen exacto. Los $50.000 de Edwards salian de raspar la
+pantalla, no del API. El fallback seguia haciendo falta —upstream busca `CUENTA_CORRIENTE` y esta
+es `CUENTA_VISTA`, asi que nunca encontraba nada— pero la conclusion sobre el valor estaba mal.
 
 Tres cosas que upstream hace mal en los tres bancos y que estan parcheadas en la copia (ver
 `collector/vendor/UPSTREAM.md`): no entrega `label` de cuenta, junta los movimientos de tarjeta
