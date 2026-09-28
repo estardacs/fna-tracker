@@ -570,6 +570,21 @@ y un fallo ahi no tumba la corrida: el movimiento queda con una descripcion gene
 `display_timezone: 'GMT-03'` en la config hace que `TRANSACTION_DATE` ya venga en hora de
 Santiago, asi que la fecha se toma con un substring. Pasarla por `Date` la correria de dia.
 
+### El saldo NO sale por el API
+
+`/users/{id}/mercadopago_account/balance` responde **403 forbidden** — existe, por eso no es
+404, pero MercadoPago se lo niega a una aplicacion de Checkout API. El reporte de liquidaciones,
+que seria la via alternativa, tampoco: `GET /v1/account/bank_report/config` da 404
+`config_not_found_for_user` y POST/PUT dan **405 Method Not Allowed**, asi que no hay forma de
+crearlo. Probado tambien sin exito: `/v1/account/balance`, `/users/{id}/accounts`,
+`/v1/asset_management/accounts`. Lo unico que responde es `/users/me` (datos de perfil, sin
+saldo) y `/v1/payments/search`.
+
+El saldo general y las cuentas de ahorro solo viven en el panel web. `npm run discover-mp` abre
+Chrome, espera a que la persona entre —el codigo al celular deja de importar, porque el login no
+se automatiza— y registra que endpoints llama la pagina, con la forma de las respuestas que
+suenan a saldo. Mismo reparto que resolvio Santander: la persona navega, el codigo captura.
+
 ### Sonda de exploracion
 
 ```bash

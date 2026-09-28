@@ -11,7 +11,8 @@
     "prune-metrics": "tsx scripts/prune-metrics.ts",
     "sync-banks": "tsx collector/sync-banks.ts",
     "probe-mp": "tsx collector/probe-mercadopago.ts",
-    "sync-mp": "tsx collector/sync-mercadopago.ts"
+    "sync-mp": "tsx collector/sync-mercadopago.ts",
+    "discover-mp": "tsx collector/discover-mercadopago.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
