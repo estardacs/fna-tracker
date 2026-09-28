@@ -580,10 +580,30 @@ crearlo. Probado tambien sin exito: `/v1/account/balance`, `/users/{id}/accounts
 `/v1/asset_management/accounts`. Lo unico que responde es `/users/me` (datos de perfil, sin
 saldo) y `/v1/payments/search`.
 
-El saldo general y las cuentas de ahorro solo viven en el panel web. `npm run discover-mp` abre
-Chrome, espera a que la persona entre —el codigo al celular deja de importar, porque el login no
-se automatiza— y registra que endpoints llama la pagina, con la forma de las respuestas que
-suenan a saldo. Mismo reparto que resolvio Santander: la persona navega, el codigo captura.
+El saldo general y las cuentas de ahorro solo viven en el panel web — y **tampoco salen de ahi
+por API**. Con la sesion iniciada y navegando por saldo y reservas, la pagina hizo **cinco**
+llamadas en cinco minutos: el documento HTML, `v3/security.js`, `melidata/tracks`,
+`notifications/center/api/badge` y `sessions/v2/planter`. Ninguna trae saldo. MercadoPago lo
+**renderiza del lado del servidor**, dentro del HTML.
+
+**Conclusion: no se persigue mas.** Sacar ese numero obliga a parsear HTML de una sesion
+autenticada, que es el scraping mas fragil que existe, y a repetir cada vez el login con codigo
+al celular porque no se puede automatizar. Es mucho costo de mantencion por una cifra que se ve
+en la app. Los 86 movimientos con nombre de comercio, que es lo que hace util un registro de
+gastos, si funcionan.
+
+Dos cosas del intento que vale conservar:
+
+- **Nunca lanzar puppeteer contra MercadoPago.** `puppeteer.launch()` pone `--enable-automation`
+  y deja `navigator.webdriver` en true; MercadoPago lo detecta y bloquea el login, gastando
+  intentos de una cuenta real. Los bancos no lo hacen porque el `browser.ts` vendorizado oculta
+  esas senales.
+- **`--attach` es la tecnica correcta** para cualquier sitio que detecte bots: la persona abre su
+  propio Chrome con `--remote-debugging-port=9222 --user-data-dir=<perfil aparte>`, entra como
+  cualquier dia, y el script solo se conecta a observar. Ojo: sobre una pestana preexistente los
+  eventos de puppeteer (`page.on('request')`) **no disparan** — hay que abrir una sesion CDP
+  propia con `Network.enable`. Comprobado: con los eventos de puppeteer, cero capturas; con CDP,
+  todo.
 
 ### Sonda de exploracion
 

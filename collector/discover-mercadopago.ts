@@ -98,29 +98,48 @@ async function main() {
   const endpoints = new Set<string>();
   const formas = new Map<string, string>();
 
-  function observar(page: import('puppeteer-core').Page) {
-  page.on('request', req => {
-    try {
-      const u = new URL(req.url());
-      if (!/mercado(pago|libre)\.c/i.test(u.hostname)) return;
-      endpoints.add(`${req.method()} ${u.hostname}${u.pathname}`);
-    } catch { /* ignorar */ }
-  });
+  /**
+   * Se escucha por CDP directo, no por los eventos de puppeteer.
+   *
+   * `page.on('request')` no dispara nada sobre una pestaña de un Chrome al que uno se CONECTA:
+   * esos eventos dependen de que puppeteer haya habilitado el dominio Network al crear la
+   * pagina, y con `connect()` sobre una pestaña preexistente eso no ocurre. Se comprobo: la
+   * pestaña se ve, se recarga, y no llega un solo evento. Una sesion CDP propia con
+   * `Network.enable` sí recibe todo.
+   */
+  async function observar(page: import('puppeteer-core').Page) {
+    const cdp = await page.createCDPSession();
+    await cdp.send('Network.enable');
 
-  page.on('response', res => {
-    try {
-      const u = new URL(res.url());
-      if (!/mercado(pago|libre)\.c/i.test(u.hostname)) return;
-      if (!INTERESANTES.test(u.pathname)) return;
-      if (res.status() < 200 || res.status() >= 300) return;
+    const pendientes = new Map<string, string>();
 
-      const clave = `${u.hostname}${u.pathname}`;
-      if (formas.has(clave)) return;
-      void res.json()
-        .then(body => formas.set(clave, describeShape(body)))
-        .catch(() => { /* no era JSON */ });
-    } catch { /* ignorar */ }
-  });
+    cdp.on('Network.responseReceived', (e: { requestId: string; response: { url: string; status: number } }) => {
+      try {
+        const u = new URL(e.response.url);
+        if (!/mercado(pago|libre)\.c/i.test(u.hostname)) return;
+
+        const linea = `${u.hostname}${u.pathname}`;
+        if (!endpoints.has(linea)) {
+          console.log(`  → ${linea}`);
+          endpoints.add(linea);
+        }
+        if (INTERESANTES.test(u.pathname) && e.response.status >= 200 && e.response.status < 300) {
+          pendientes.set(e.requestId, linea);
+        }
+      } catch { /* ignorar */ }
+    });
+
+    // El cuerpo solo esta disponible cuando la carga termino.
+    cdp.on('Network.loadingFinished', async (e: { requestId: string }) => {
+      const ruta = pendientes.get(e.requestId);
+      if (!ruta || formas.has(ruta)) return;
+      pendientes.delete(e.requestId);
+      try {
+        const r = await cdp.send('Network.getResponseBody', { requestId: e.requestId }) as { body: string };
+        formas.set(ruta, describeShape(JSON.parse(r.body)));
+        console.log(`  ✓ forma capturada: ${ruta}`);
+      } catch { /* no era JSON o ya no esta disponible */ }
+    });
   }
 
   if (!attach) {
@@ -131,10 +150,15 @@ async function main() {
   browser.on('targetcreated', async (target) => {
     try {
       const nueva = await target.page();
-      if (nueva) observar(nueva);
+      if (nueva) await observar(nueva);
     } catch { /* no era una página */ }
   });
-  for (const p of await browser.pages()) observar(p);
+  const iniciales = await browser.pages();
+  console.log(`Observando ${iniciales.length} pestaña(s):`);
+  for (const p of iniciales) {
+    console.log(`  · ${p.url().split('?')[0]}`);
+    await observar(p);
+  }
 
   console.log('\nChrome abierto. Entra a tu cuenta (con el código al celular si lo pide),');
   console.log('anda a donde se ve tu saldo y tus cuentas de ahorro, y déjalo a la vista.');
