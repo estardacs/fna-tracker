@@ -477,8 +477,21 @@ function accountKind(label: string): 'checking' | 'savings' | 'line_of_credit' {
   return 'checking';
 }
 
+/**
+ * dd-mm-yyyy, venga como venga.
+ *
+ * `normalizeDate` de upstream deja pasar el ISO sin tocarlo, asi que los normalizadores de
+ * tarjeta de Santander entregan "2026-09-16" mientras la ruta exige dd-mm-yyyy y rechaza el
+ * lote entero. La ruta hace bien en ser estricta —una fecha mal leida envenena el dedup_key
+ * para siempre— asi que la conversion va acá, en el adaptador, no allá.
+ */
+const toDdMmYyyy = (d: string): string =>
+  /^\d{4}-\d{2}-\d{2}/.test(d.trim())
+    ? `${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(0, 4)}`
+    : d;
+
 const movement = (m: BankMovement) => ({
-  date: m.date,
+  date: toDdMmYyyy(m.date),
   description: m.description,
   // `?? 0` solo para el monto: si no se pudo leer, el movimiento existe y la ruta lo va a
   // rechazar por el zod, que es lo correcto — mejor un lote rechazado que un monto inventado.

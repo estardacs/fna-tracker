@@ -564,6 +564,10 @@ async function scrapeSantander(
   // cuerpos, sin query strings, sin cabeceras: nada de esto lleva datos financieros ni
   // credenciales, solo la forma del API. Se ve únicamente con --debug.
   const seenEndpoints = new Set<string>();
+  // El cuerpo del POST de CADA endpoint que nos interesa, no solo el de la cuenta corriente.
+  // Conocer que campos espera cada uno es lo que permite llamarlos directo con el rango de
+  // fechas elegido, y dejar de depender de que la persona navegue.
+  const requestBodies = new Map<string, unknown>();
   let lastTransactionsRequestBody: unknown = null;
 
   page.on("request", (req) => {
@@ -575,11 +579,23 @@ async function scrapeSantander(
       // Se guarda el cuerpo del POST de movimientos para poder describir su FORMA. Saber qué
       // campos espera es lo que permite llamar al endpoint directamente con el rango de fechas
       // que uno quiere, en vez de depender de que la UI lance la consulta sola.
-      if (req.method() === "POST" && req.url().startsWith(SANTANDER_CHECKING_API_PREFIX)) {
-        const raw = req.postData();
-        if (raw) {
-          try { lastTransactionsRequestBody = JSON.parse(raw); }
-          catch { lastTransactionsRequestBody = { __noJson: raw.length }; }
+      if (req.method() === "POST") {
+        const objetivos: Array<[string, string]> = [
+          ["cuenta corriente", SANTANDER_CHECKING_API_PREFIX],
+          ["tarjeta no facturado", SANTANDER_CC_API_PREFIX],
+          ["tarjeta facturado", SANTANDER_CC_BILLED_API_PREFIX],
+          ["tarjeta estado de cuenta", SANTANDER_CC_STATEMENT_PREFIX],
+          ["tarjeta resumen", SANTANDER_CC_SUMMARY_PREFIX],
+        ];
+        for (const [nombre, prefijo] of objetivos) {
+          if (!req.url().startsWith(prefijo) || requestBodies.has(nombre)) continue;
+          const raw = req.postData();
+          if (!raw) continue;
+          try { requestBodies.set(nombre, JSON.parse(raw)); }
+          catch { requestBodies.set(nombre, { __noJson: raw.length }); }
+          if (prefijo === SANTANDER_CHECKING_API_PREFIX) {
+            lastTransactionsRequestBody = requestBodies.get(nombre);
+          }
         }
       }
     } catch { /* URL no parseable, se ignora */ }
@@ -693,6 +709,18 @@ async function scrapeSantander(
       'Navega a Movimientos en la ventana de Chrome y deja los movimientos a la vista.',
     );
     debugLog.push("   navegación manual terminada");
+
+    // La URL a la que llego la persona es la pieza que falta para automatizar esto. El portal
+    // es una app de micro-frontends y navegar por URL es mucho mas estable que hacer clic en un
+    // cajon de navegacion cuyas etiquetas cambian: dos sondas automaticas mostraron que el clic
+    // en "Mis Tarjetas de Credito" no cierra el menu siquiera.
+    try {
+      debugLog.push(`   URL alcanzada: ${page.url()}`);
+      for (const f of page.frames()) {
+        const u = f.url();
+        if (u && u !== page.url() && /santander/.test(u)) debugLog.push(`   frame: ${u}`);
+      }
+    } catch { /* la pagina pudo haberse cerrado */ }
   } else {
     debugLog.push("7. Navigating to movements...");
     progress("Extrayendo movimientos de cuenta...");
@@ -835,7 +863,37 @@ async function scrapeSantander(
   progress("Extrayendo movimientos de tarjeta de crédito...");
   const tcReady = await navigateToCreditCardSection(page, debugLog);
   if (tcReady) {
-    if (await clickTcTab(page, "movimientos por facturar")) {
+    // DIAGNOSTICO (cambio respecto a upstream): si la pestana no se encuentra, volcar los
+    // textos clickeables de la pantalla. Es lo unico que falta para automatizar esto: el
+    // scraper YA llega solo a "Mis Tarjetas de Credito", falla al elegir la pestana porque sus
+    // etiquetas cambiaron. Con los textos reales se corrigen los selectores y no hace falta
+    // que nadie navegue nunca mas.
+    const porFacturar = await clickTcTab(page, "movimientos por facturar");
+    if (!porFacturar) {
+      // La tarjeta se dibuja como imagen dentro de un carrusel, no como texto, asi que un
+      // volcado de innerText no la ve. Se esperan unos segundos a que cargue la lista y se
+      // miran tambien aria-label, title y alt, que es donde suele estar su nombre.
+      await delay(5000);
+      const textos = await page.evaluate(() => {
+        const vistos = new Set<string>();
+        for (const el of document.querySelectorAll("a, button, [role='tab'], [role='menuitem'], li, span, img, [aria-label], [title]")) {
+          const e = el as HTMLElement;
+          const candidatos = [
+            e.innerText?.trim(),
+            e.getAttribute("aria-label")?.trim(),
+            e.getAttribute("title")?.trim(),
+            (e as HTMLImageElement).alt?.trim(),
+          ];
+          for (const t of candidatos) {
+            if (t && t.length > 2 && t.length < 45 && !/\d{4}/.test(t)) vistos.add(t);
+          }
+        }
+        return [...vistos].slice(0, 60);
+      });
+      debugLog.push(`  pestana no encontrada. Textos clickeables en pantalla:`);
+      for (const t of textos) debugLog.push(`    · ${t}`);
+    }
+    if (porFacturar) {
       const unbilledCaptures = await interceptor.waitFor("santander-credit-card-unbilled", 10_000);
       if (unbilledCaptures.length > 0) {
         debugLog.push(`  forma TC unbilled: ${describeShape(unbilledCaptures[0])}`);
@@ -881,6 +939,14 @@ async function scrapeSantander(
   }
   if (balance === undefined || balance === 0) {
     balance = await extractBalance(page);
+  }
+
+  // Las formas de los cuerpos, siempre: son la receta para llamar a estos endpoints sin UI.
+  if (requestBodies.size > 0) {
+    debugLog.push(`  formas de request capturadas (${requestBodies.size}):`);
+    for (const [nombre, cuerpo] of requestBodies) {
+      debugLog.push(`    ${nombre}: ${describeShape(cuerpo)}`);
+    }
   }
 
   // Volcado al final: si la extracción trajo 0, acá está la lista de lo que la página sí llamó.
