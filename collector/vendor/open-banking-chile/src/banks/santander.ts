@@ -858,6 +858,17 @@ async function scrapeSantander(
   }
   movements = deduplicateMovements(movements);
 
+  // El saldo se raspa ANTES de irse a la tarjeta.
+  //
+  // extractBalance lee el primer numero que calza con su patron en document.body.innerText,
+  // o sea de la pantalla que este visible. Corria en el paso 8, que desde que la navegacion
+  // a la tarjeta es automatica ocurre con la pantalla de la TARJETA a la vista: el numero
+  // salia de ahi y se le atribuia a una cuenta corriente. Lo noto el usuario, no el codigo.
+  const balancePantallaCuentas = await extractBalance(page);
+  if (balancePantallaCuentas !== undefined) {
+    debugLog.push(`  saldo en pantalla de cuentas: $${balancePantallaCuentas.toLocaleString("es-CL")}`);
+  }
+
   // 7b. Credit card movements
   //
   // CAMBIO RESPECTO A UPSTREAM — las capturas del interceptor son la fuente, no los clics.
@@ -897,6 +908,14 @@ async function scrapeSantander(
     resumen = parseResumenTarjeta(interceptor.getAll("santander-credit-card-summary"));
     if (resumen.national) {
       debugLog.push(`  resumen de tarjeta: cupo y deuda leidos${resumen.cuenta ? ` (cuenta ${resumen.cuenta})` : ""}`);
+      // Los valores, no solo la forma: el cupo esta llegando en 0 y FechaVencimiento vacia
+      // aunque el banco declara ambos campos, y sin los numeros no se distingue "el banco
+      // manda cero" de "el parser no supo leerlo".
+      debugLog.push(
+        `    cupo total=${resumen.national.total} usado=${resumen.national.used} ` +
+          `disponible=${resumen.national.available} venc=${resumen.nextDueDate ?? "—"} ` +
+          `periodo=${resumen.billingPeriod ?? "—"}`,
+      );
     }
 
     debugLog.push(`7b. ${etiqueta}: ${cardMovements.length} movimiento(s) de tarjeta desde las capturas`);
@@ -999,8 +1018,34 @@ async function scrapeSantander(
     balance = withBalance.balance;
     debugLog.push(`  Balance from movements: $${balance.toLocaleString("es-CL")}`);
   }
+  // Los dos raspados son de PANTALLAS distintas, y por eso dan numeros distintos: el de
+  // cuentas es el saldo de la cuenta vista, el de la tarjeta es su cupo disponible.
+  const balancePantallaTarjeta = await extractBalance(page);
   if (balance === undefined || balance === 0) {
-    balance = await extractBalance(page);
+    balance = balancePantallaCuentas ?? undefined;
+  }
+
+  // El cupo disponible, cuando la API lo manda en cero.
+  //
+  // ResumenEECCNacional declara CupoPesos, CupoUtilizado y CupoDisponible y los devuelve en
+  // 0 —probablemente porque el request va con NumeroTarjeta1 nulo—, asi que sin esto la
+  // tarjeta queda sin cupo aunque la pantalla lo muestre. Solo se usa el raspado si la API
+  // no dio nada, y la suma contra los movimientos queda en el log como verificacion: si
+  // usado + disponible no da una linea de credito redonda, el numero raspado no era el cupo.
+  const cupoVacio =
+    !resumen.national ||
+    (resumen.national.total === 0 && resumen.national.used === 0 && resumen.national.available === 0);
+  if (cupoVacio && balancePantallaTarjeta !== undefined && cardMovements.length > 0) {
+    const usado = cardMovements.reduce((acc, m) => acc + Math.abs(Number(m.amount) || 0), 0);
+    resumen = {
+      ...resumen,
+      national: { total: 0, used: 0, available: balancePantallaTarjeta },
+    };
+    debugLog.push(
+      `  cupo disponible $${balancePantallaTarjeta.toLocaleString("es-CL")} tomado de la pantalla ` +
+        `(la API lo devolvio en 0); movimientos suman $${usado.toLocaleString("es-CL")}, ` +
+        `linea implicita $${(usado + balancePantallaTarjeta).toLocaleString("es-CL")}`,
+    );
   }
 
   // Las formas de los cuerpos, siempre: son la receta para llamar a estos endpoints sin UI.

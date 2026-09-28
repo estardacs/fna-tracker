@@ -490,6 +490,12 @@ const toDdMmYyyy = (d: string): string =>
     ? `${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(0, 4)}`
     : d;
 
+// Las fechas del resumen de tarjeta llegan por el mismo camino y con el mismo formato ISO,
+// pero como campos opcionales: sin esto, FechaVencimiento se leia bien del banco y la ruta la
+// descartaba en silencio, dejando stmt_due_date y next_due_date en null sin decir por que.
+const toDdMmYyyyOrNull = (d: string | null | undefined): string | null =>
+  d && d.trim() !== '' ? toDdMmYyyy(d) : null;
+
 const movement = (m: BankMovement) => ({
   date: toDdMmYyyy(m.date),
   description: m.description,
@@ -537,12 +543,12 @@ function mapCard(c: CreditCardBalance, win: { from: string; to: string; complete
       internationalTotal: toNumber(c.international?.total),
       internationalCurrency: (c.international?.currency as 'USD' | 'EUR' | undefined) ?? null,
       billingPeriod: c.billingPeriod ?? null,
-      nextBillingDate: c.nextBillingDate ?? null,
-      nextDueDate: c.nextDueDate ?? null,
+      nextBillingDate: toDdMmYyyyOrNull(c.nextBillingDate),
+      nextDueDate: toDdMmYyyyOrNull(c.nextDueDate),
       periodExpenses: toNumber(c.periodExpenses),
-      statementBillingDate: c.lastStatement?.billingDate ?? null,
+      statementBillingDate: toDdMmYyyyOrNull(c.lastStatement?.billingDate),
       statementBilledAmount: toNumber(c.lastStatement?.billedAmount),
-      statementDueDate: c.lastStatement?.dueDate ?? null,
+      statementDueDate: toDdMmYyyyOrNull(c.lastStatement?.dueDate),
       statementMinimum: toNumber(c.lastStatement?.minimumPayment),
     },
     // El banco entrega los no facturados como un listado completo en una sola llamada, así

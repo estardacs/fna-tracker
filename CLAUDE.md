@@ -514,6 +514,30 @@ La cuenta corriente no se usa; las transacciones reales estan en la **tarjeta de
   que se reduce a mascara antes de llegar al payload.
 - `estadoDeCuenta` → devuelve `imgNbs64`, una imagen del estado de cuenta. No sirve para datos.
 
+**El cupo viene en 0 por la API.** `ResumenEECCNacional` declara `CupoPesos`, `CupoUtilizado` y
+`CupoDisponible` y devuelve los tres en cero, probablemente porque el request va con
+`NumeroTarjeta1` nulo. El cupo disponible se toma de la pantalla **solo cuando la API no dio
+nada**, y el log deja la verificacion: movimientos $439.854 + disponible $60.146 = linea de
+$500.000, redonda. Si esa suma dejara de dar una linea de credito plausible, el numero raspado
+no era el cupo.
+
+**Las fechas del resumen llegan en ISO** (`FechaVencimiento`, `FechaFacturaActual`), igual que
+las de los movimientos de tarjeta, asi que pasan por `toDdMmYyyyOrNull()` en el colector. Sin
+eso la ruta las descartaba en silencio y `stmt_due_date` / `next_due_date` quedaban en null
+aunque el banco las estuviera mandando.
+
+### El saldo raspado depende de la pantalla que este a la vista
+
+`extractBalance` lee el **primer numero que calza con su patron en `document.body.innerText`**,
+o sea de la pantalla visible. Corria despues de la navegacion a la tarjeta, asi que leia el
+cupo disponible de la TARJETA y se lo atribuia a una cuenta corriente: la cuenta vista aparecia
+con $60.146 cuando en realidad tiene **$0**. Lo noto el usuario, no el codigo.
+
+Ahora el saldo de cuentas se raspa **antes** de irse a la tarjeta. La leccion general: un
+numero raspado de la pantalla no lleva consigo a que cuenta pertenece, asi que el momento en
+que se lee es parte del dato. Cualquier navegacion nueva que se agregue antes del paso 8 vuelve
+a romper esto.
+
 ### Navegar por URL, no por clics
 
 Santander corre automatico: `npm run sync-banks -- --bank=santander --confirm`. Llega solo a la
@@ -569,7 +593,7 @@ login para recuperar lo mismo.
 |---|---|---|---|---|
 | `bchile` | ok, **sin clave dinamica** | ok (35 mov, fechas correctas) | **$0 real**, no un fallo | sin tarjeta en esta cuenta |
 | `edwards` | ok | ok (20 mov) pero **desactivado** | ok ($50.000) | pestanas no encontradas |
-| `santander` | ok, credenciales guardadas | cuenta corriente sin movimientos (no la usa) | ok ($60.146) | **ok automatico**: 23 mov + cupo y deuda |
+| `santander` | ok, credenciales guardadas | cuenta vista **$0**, sin movimientos (no la usa) | $0, real | **ok automatico**: 23 mov, deuda $439.039, cupo disp. $60.146, vence 09-10 |
 
 **Edwards esta vendorizado pero NO registrado en `SCRAPERS`.** Es una marca de Banco de Chile y,
 en esta cuenta, el mismo producto: `bchile` reporta "Found 1 products" y Edwards muestra una sola
