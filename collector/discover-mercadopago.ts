@@ -94,7 +94,22 @@ async function main() {
 
   console.log('\nChrome abierto. Entra a tu cuenta (con el código al celular si lo pide),');
   console.log('anda a donde se ve tu saldo y tus cuentas de ahorro, y déjalo a la vista.');
-  await ask('\nCuando estés listo, presiona Enter acá: ');
+
+  // Dos formas de esperar, porque quien lanza esto no siempre es quien navega. Con --wait=N
+  // corre sin teclado: sirve cuando el script se dispara desde otra terminal —por ejemplo desde
+  // WSL manejando Windows— y la persona solo interactua con la ventana de Chrome.
+  const esperaArg = process.argv.slice(2).find(a => a.startsWith('--wait='))?.slice(7);
+  const segundos = esperaArg ? Number(esperaArg) : null;
+
+  if (segundos && Number.isFinite(segundos)) {
+    console.log(`\nEsperando ${segundos}s mientras navegas. No hace falta tocar esta consola.`);
+    for (let queda = segundos; queda > 0; queda -= 30) {
+      await new Promise(r => setTimeout(r, Math.min(30, queda) * 1000));
+      if (queda > 30) console.log(`  quedan ~${queda - 30}s`);
+    }
+  } else {
+    await ask('\nCuando estés listo, presiona Enter acá: ');
+  }
 
   await new Promise(r => setTimeout(r, 2000));
   await browser.close();
