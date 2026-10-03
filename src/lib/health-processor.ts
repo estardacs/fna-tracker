@@ -222,7 +222,8 @@ export async function getHealthDailyStats(dateStr?: string): Promise<HealthDaily
         'Entrenamiento',
       durationMinutes: w.duration_seconds ? Math.round(w.duration_seconds / 60) : 0,
       caloriesBurned,
-      caloriesEstimated: reported === 0,
+      // Backfilled Health Connect rows store an estimate; the flag keeps them labelled as one.
+      caloriesEstimated: reported === 0 || w.metadata?.calories_estimated === true,
       avgHeartRate: w.avg_heart_rate || null,
       maxHeartRate: w.max_heart_rate || null,
       distanceKm: w.distance_meters ? Math.round(w.distance_meters / 100) / 10 : null,

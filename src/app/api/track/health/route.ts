@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { freezeWorkoutCalories } from '@/lib/workout-service';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,11 +73,23 @@ export async function POST(request: Request) {
       }
 
       case 'workout': {
+        // Calorías congeladas con el peso vigente en la fecha del entrenamiento: un pesaje
+        // posterior no debe reescribirlas. Si faltan datos corporales, se guarda sin ellas.
+        let frozen: Record<string, unknown> = {};
+        let metadata = data.metadata || {};
+        try {
+          const f = await freezeWorkoutCalories(data);
+          frozen = { calories_burned: f.calories_burned, net_calories: f.net_calories, met: f.met };
+          metadata = { ...metadata, bmr: f.bmr, ...(f.estimated && { calories_estimated: true }) };
+        } catch (e) {
+          console.warn('No se pudieron congelar las calorías del entrenamiento:', e);
+        }
+
         // Upsert por start_time para evitar duplicados cuando WorkManager re-ejecuta
         const { error } = await supabase
           .from('health_workouts')
           .upsert(
-            { ...data, metadata: data.metadata || {} },
+            { ...data, ...frozen, metadata },
             { onConflict: 'start_time' }
           );
         if (error) throw error;

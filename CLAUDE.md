@@ -366,7 +366,8 @@ Three fields exist specifically to keep the data honest:
   unknown, which is what the pre-existing items are.
 - **`diet_goals.tdee_calories`** plus height, birth year, sex and activity factor, so
   `recalculate_tdee` can redo Mifflin-St Jeor as weight drops instead of leaving a figure
-  that was only true the day it was computed.
+  that was only true the day it was computed. The factor is **1.2 (sedentary) on purpose**
+  since 2026-10-02: logged workouts are added on top, and 1.3 would count them twice.
 
 `meal_combos.servings` divides a batch-cooked recipe: logging one portion of a 4-serving
 meal prep scales every ingredient by ¼.
@@ -374,10 +375,10 @@ meal prep scales every ingredient by ¼.
 ### `/api/mcp`
 
 Streamable HTTP MCP server (`mcp-handler` v2), so Claude Desktop, Claude Code and — if
-`static_headers` is enabled on the account — mobile can all log meals by chat. Eleven
+`static_headers` is enabled on the account — mobile can all log meals by chat. Fourteen
 tools: `search_foods`, `log_food`, `list_combos`, `log_combo`, `create_food`,
 `day_summary`, `confirm_day`, `delete_entry`, `progress`, `log_weight`,
-`recalculate_tdee`.
+`recalculate_tdee`, `log_workout`, `list_workouts`, `delete_workout`.
 
 All logic lives in `src/lib/diet-service.ts`; the route is a thin wrapper, so replacing
 bearer auth with OAuth touches one function. **Tools never accept macro values for an
@@ -397,6 +398,31 @@ curl -s -X POST http://localhost:3000/api/mcp \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
+
+### Workouts (`src/lib/workout-service.ts`)
+
+`log_workout` / `list_workouts` / `delete_workout` write to the existing `health_workouts`
+with `source = 'manual'` (Health Connect rows default to `'health_connect'`), so the
+dashboard shows them with no UI changes. Migration `20261002000000`.
+
+- **Corrected MET, not BMI.** `gross = MET × BMR/24 × h`, using the Mifflin-St Jeor BMR from
+  `getBodyProfile()` instead of the standard 3.5 ml/kg/min resting assumption, which
+  overstates rest for a heavier body (~10 % less than naive `MET × kg`). BMI is returned as
+  context only: it does not determine energy expenditure.
+- **Only net kcal feed the deficit:** `net = (MET − 1) × BMR/24 × h`. The resting part is
+  already inside the TDEE. `calories_burned` stores gross, like a watch would.
+- **Calories are frozen at write time** (`calories_burned` + `net_calories`), using the
+  weight in force on the workout's date (`getWeightAsOf`), never today's. Recomputing on
+  read meant every weigh-in rewrote the exercise and deficit of every past day.
+  `/api/track/health` freezes Health Connect rows on ingest too (`freezeWorkoutCalories`);
+  the rows that existed before were backfilled in migration `20261002010000`.
+- **Distance beats intensity.** With a distance, speed bands from the Compendium pick the MET
+  and the response says when that contradicts the declared intensity (550 m in 30 min is
+  "slow freestyle", 5.8, not the 8.3 "medium" would give).
+- `activity = 'other'` requires an explicit MET and is flagged `metadata.met_source = 'client'`.
+- `start_time` is NOT NULL and UNIQUE (Health Connect upserts on it): without an hour the
+  workout goes at 12:00 Santiago, shifted by seconds on collision, `metadata.time_estimated`.
+- Deleting is limited to manual rows **by RLS policy**, not only in code.
 
 > **Security note:** every diet table has an `anon_all` RLS policy granting full read and
 > write to the anon key, which ships in the browser bundle. The Next.js middleware is the

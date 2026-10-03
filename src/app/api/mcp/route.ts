@@ -1,5 +1,5 @@
 /**
- * MCP server for diet logging.
+ * MCP server for diet and workout logging.
  *
  * Exposed over Streamable HTTP so it works from Claude Desktop, Claude Code and — if
  * static_headers is available on the account — the mobile app. A local stdio server
@@ -12,6 +12,8 @@
  * All nutrition maths lives in src/lib/diet-service.ts. Tools never accept macro values
  * for an existing food — they take an id and the server derives the numbers — so the
  * model cannot invent nutrition data, which is the whole point of having a food table.
+ * Workouts follow the same rule: the caller gives activity, duration and intensity, and the
+ * calories come from src/lib/workout-service.ts.
  */
 import { createMcpHandler } from 'mcp-handler';
 import { z } from 'zod';
@@ -30,6 +32,7 @@ import {
   logWeight,
   recalculateTdee,
 } from '@/lib/diet-service';
+import { ACTIVITY_KEYS, INTENSITIES, logWorkout, listWorkouts, deleteWorkout } from '@/lib/workout-service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -174,7 +177,7 @@ const handler = createMcpHandler(
       'day_summary',
       {
         description:
-          'Resumen de un día: lo confirmado, lo solo planificado, cuánto falta para la meta y el déficit contra el TDEE. Úsalo para responder "cómo voy hoy".',
+          'Resumen de un día: lo confirmado, lo solo planificado, cuánto falta para la meta, los entrenamientos y el déficit (TDEE sedentario + calorías netas de ejercicio − lo comido). Úsalo para responder "cómo voy hoy".',
         inputSchema: z.object({ date: dateSchema }),
       },
       async ({ date }) => {
@@ -221,7 +224,7 @@ const handler = createMcpHandler(
       'progress',
       {
         description:
-          'Promedio de calorías y proteína de los últimos N días, déficit acumulado y pérdida de peso proyectada. Los días sin registros se excluyen, no se cuentan como cero.',
+          'Promedio de calorías y proteína de los últimos N días, ejercicio neto, déficit acumulado y pérdida de peso proyectada. Los días sin comida registrada se excluyen, no se cuentan como cero.',
         inputSchema: z.object({ days: z.number().int().min(2).max(90).default(7) }),
       },
       async ({ days }) => {
@@ -236,9 +239,10 @@ const handler = createMcpHandler(
     server.registerTool(
       'log_weight',
       {
-        description: 'Registra un peso corporal en kg.',
+        description:
+          'Registra un peso corporal en kg. Si es el pesaje más reciente, recalcula el TDEE en el acto y devuelve IMC, BMR y TDEE nuevo; las calorías de los entrenamientos siguientes usan este peso.',
         inputSchema: z.object({
-          weight_kg: z.number().positive(),
+          weight_kg: z.number().positive().max(300),
           date: dateSchema,
         }),
       },
@@ -266,9 +270,80 @@ const handler = createMcpHandler(
         }
       },
     );
+
+    server.registerTool(
+      'log_workout',
+      {
+        description:
+          'Registra UN entrenamiento (una llamada por actividad). Las calorías las calcula el servidor con MET corregido por el BMR del usuario; no se aceptan calorías del cliente. Si se da distancia en caminata, running, ciclismo o natación, el ritmo decide el MET por sobre la intensidad declarada. Antes, revisa list_workouts del día para no duplicar lo que ya registró el reloj.',
+        inputSchema: z.object({
+          activity: z.enum(ACTIVITY_KEYS).describe('Tipo de actividad. Usa "other" solo si ninguna calza'),
+          duration_minutes: z.number().positive().describe('Duración total en minutos'),
+          intensity: z.enum(INTENSITIES).describe('Intensidad percibida: low (baja), medium (media), high (alta)'),
+          distance_m: z.number().positive().optional().describe('Distancia en metros, si se conoce'),
+          start_time: z
+            .string()
+            .regex(/^\d{2}:\d{2}$/)
+            .optional()
+            .describe('Hora de inicio HH:mm en Santiago. Si se omite, se asume mediodía'),
+          met: z.number().positive().max(25).optional().describe('Solo con activity="other": MET de la actividad'),
+          notes: z.string().optional(),
+          date: dateSchema,
+        }),
+      },
+      async ({ activity, duration_minutes, intensity, distance_m, start_time, met, notes, date }) => {
+        try {
+          return text(
+            await logWorkout({
+              date,
+              activity,
+              durationMin: duration_minutes,
+              intensity,
+              distanceM: distance_m,
+              startTime: start_time,
+              met,
+              notes,
+            }),
+          );
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    );
+
+    server.registerTool(
+      'list_workouts',
+      {
+        description:
+          'Lista los entrenamientos de un día (manuales y de Health Connect) con su id, MET, calorías brutas y netas. Las netas son las que cuentan para el déficit.',
+        inputSchema: z.object({ date: dateSchema }),
+      },
+      async ({ date }) => {
+        try {
+          return text(await listWorkouts(date ?? todayInSantiago()));
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    );
+
+    server.registerTool(
+      'delete_workout',
+      {
+        description: 'Borra un entrenamiento registrado a mano, por su id. Los de Health Connect no se pueden borrar.',
+        inputSchema: z.object({ workout_id: z.number().int().positive().describe('id devuelto por list_workouts') }),
+      },
+      async ({ workout_id }) => {
+        try {
+          return text(await deleteWorkout(workout_id));
+        } catch (e) {
+          return fail(e);
+        }
+      },
+    );
   },
   {
-    serverInfo: { name: 'fna-tracker-diet', version: '1.0.0' },
+    serverInfo: { name: 'fna-tracker', version: '1.1.0' },
   },
 );
 

@@ -11,6 +11,7 @@
 import { supabase } from '@/lib/supabase';
 import { format, subDays, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { listWorkouts, getNetExerciseByDate } from '@/lib/workout-service';
 
 const TIMEZONE = 'America/Santiago';
 
@@ -254,13 +255,15 @@ function sumMacros(rows: LogRow[]) {
 }
 
 export async function getDaySummary(date: string) {
-  const [{ data: rows, error }, goals] = await Promise.all([
+  const [{ data: rows, error }, goals, exercise] = await Promise.all([
     supabase
       .from('diet_log')
       .select('id, meal, status, grams_consumed, calories, protein_g, carbs_g, fat_g, fiber_g, food_items(name)')
       .eq('date', date)
       .order('logged_at', { ascending: true }),
     getGoals(),
+    // A summary should not fail because body data is missing for a legacy workout.
+    listWorkouts(date).catch(() => null),
   ]);
 
   if (error) throw new Error(`No se pudo leer el día: ${error.message}`);
@@ -288,9 +291,13 @@ export async function getDaySummary(date: string) {
       protein_g: Math.round((goals.protein_g - eaten.protein_g) * 10) / 10,
       fat_g: Math.round((goals.fat_g - eaten.fat_g) * 10) / 10,
     },
+    exercise,
     // Deficit is measured against TDEE, not the calorie target: eating exactly the target
-    // is not a zero deficit, it is the intended one.
-    deficit: goals.tdee_calories ? Math.round(goals.tdee_calories - eaten.calories) : null,
+    // is not a zero deficit, it is the intended one. Only NET exercise kcal are added — the
+    // resting part of a workout is already inside the TDEE.
+    deficit: goals.tdee_calories
+      ? Math.round(goals.tdee_calories + (exercise?.net ?? 0) - eaten.calories)
+      : null,
     entries: all.map(r => ({
       id: r.id,
       meal: r.meal,
@@ -307,7 +314,7 @@ export async function getProgress(days = 7) {
   const today = todayInSantiago();
   const from = format(subDays(parseISO(today + 'T12:00:00'), days - 1), 'yyyy-MM-dd');
 
-  const [{ data: rows, error }, goals] = await Promise.all([
+  const [{ data: rows, error }, goals, exerciseByDate] = await Promise.all([
     supabase
       .from('diet_log')
       .select('date, calories, protein_g')
@@ -315,6 +322,7 @@ export async function getProgress(days = 7) {
       .lte('date', today)
       .eq('status', 'confirmed'),
     getGoals(),
+    getNetExerciseByDate(from, today).catch(() => new Map<string, number>()),
   ]);
 
   if (error) throw new Error(`No se pudo leer el progreso: ${error.message}`);
@@ -331,13 +339,17 @@ export async function getProgress(days = 7) {
   // fabricate an enormous deficit for any day that simply was not logged.
   const logged = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b));
   if (logged.length === 0) {
-    return { days, from, to: today, loggedDays: 0, avgCalories: null, avgProtein: null, totalDeficit: null, projectedKg: null, daily: [] };
+    return { days, from, to: today, loggedDays: 0, avgCalories: null, avgProtein: null, totalExerciseNet: 0, totalDeficit: null, projectedKg: null, daily: [] };
   }
 
   const totalCalories = logged.reduce((s, [, v]) => s + v.calories, 0);
   const totalProtein = logged.reduce((s, [, v]) => s + v.protein_g, 0);
   const tdee = goals.tdee_calories;
-  const totalDeficit = tdee ? logged.reduce((s, [, v]) => s + (tdee - v.calories), 0) : null;
+  // Exercise only counts on days with logged food: a day without intake is excluded
+  // entirely, so its workouts cannot be turned into deficit either.
+  const exerciseOf = (date: string) => exerciseByDate.get(date) ?? 0;
+  const totalExerciseNet = logged.reduce((s, [date]) => s + exerciseOf(date), 0);
+  const totalDeficit = tdee ? logged.reduce((s, [date, v]) => s + (tdee + exerciseOf(date) - v.calories), 0) : null;
 
   return {
     days,
@@ -346,19 +358,42 @@ export async function getProgress(days = 7) {
     loggedDays: logged.length,
     avgCalories: Math.round(totalCalories / logged.length),
     avgProtein: Math.round(totalProtein / logged.length),
+    totalExerciseNet,
     totalDeficit: totalDeficit === null ? null : Math.round(totalDeficit),
     projectedKg: totalDeficit === null ? null : Math.round((totalDeficit / KCAL_PER_KG_FAT) * 100) / 100,
-    daily: logged.map(([date, v]) => ({ date, calories: Math.round(v.calories), protein_g: Math.round(v.protein_g) })),
+    daily: logged.map(([date, v]) => ({
+      date,
+      calories: Math.round(v.calories),
+      protein_g: Math.round(v.protein_g),
+      exercise_net: exerciseOf(date),
+    })),
   };
 }
 
 // ---------------------------------------------------------------- weight
 
+/**
+ * TDEE and workout calories both derive from the latest weight, so a weigh-in recomputes
+ * the TDEE immediately rather than waiting for someone to remember recalculate_tdee.
+ * A back-dated weigh-in older than the latest one changes nothing, and says so.
+ */
 export async function logWeight(weightKg: number, date?: string) {
   const when = date ?? todayInSantiago();
   const { error } = await supabase.from('health_weight_log').insert({ date: when, weight_kg: weightKg });
   if (error) throw new Error(`No se pudo registrar el peso: ${error.message}`);
-  return { date: when, weight_kg: weightKg };
+
+  const latest = await getLatestWeight();
+  if (latest?.date !== when) {
+    return { date: when, weight_kg: weightKg, tdee: null, note: `Hay un pesaje más reciente (${latest?.date}); el TDEE no cambia.` };
+  }
+  try {
+    const { tdee, previous, bmr } = await recalculateTdee();
+    const { bmi } = await getBodyProfile();
+    return { date: when, weight_kg: weightKg, bmi, bmr, tdee, previous_tdee: previous };
+  } catch (e) {
+    // The weigh-in is saved either way; only the derived figures are missing.
+    return { date: when, weight_kg: weightKg, tdee: null, note: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function getLatestWeight() {
@@ -366,29 +401,84 @@ export async function getLatestWeight() {
     .from('health_weight_log')
     .select('date, weight_kg')
     .order('date', { ascending: false })
+    // Several weigh-ins can share a date; the last one entered is the current weight.
+    .order('created_at', { ascending: false })
     .limit(1)
     .single();
   return data ?? null;
 }
 
-/**
- * Mifflin-St Jeor. TDEE drifts down as weight drops, so a figure calculated once at 87 kg
- * overstates the deficit months later — this recomputes it from the latest weigh-in.
- */
-export async function recalculateTdee() {
-  const [goals, weight] = await Promise.all([getGoals(), getLatestWeight()]);
-  if (!weight) throw new Error('No hay ningún registro de peso.');
+type Goals = Awaited<ReturnType<typeof getGoals>>;
+
+/** Mifflin-St Jeor resting expenditure, in kcal/day. */
+export function computeBmr(goals: Goals, weightKg: number) {
   if (!goals.height_cm || !goals.birth_year || !goals.sex) {
     throw new Error('Faltan datos corporales (altura, año de nacimiento o sexo) en diet_goals.');
   }
-
   const age = Number(todayInSantiago().slice(0, 4)) - goals.birth_year;
-  const base = 10 * Number(weight.weight_kg) + 6.25 * Number(goals.height_cm) - 5 * age;
-  const bmr = goals.sex === 'M' ? base + 5 : base - 161;
-  const tdee = Math.round(bmr * Number(goals.activity_factor ?? 1.3));
+  const base = 10 * weightKg + 6.25 * Number(goals.height_cm) - 5 * age;
+  return { bmr: goals.sex === 'M' ? base + 5 : base - 161, age };
+}
+
+/**
+ * The weight in force on `date`: the last weigh-in on or before it, or the earliest one if
+ * the date predates every weigh-in. A past day's calories must use the weight of that day,
+ * not today's, or every new weigh-in would rewrite history.
+ */
+export async function getWeightAsOf(date: string) {
+  const { data } = await supabase
+    .from('health_weight_log')
+    .select('date, weight_kg')
+    .lte('date', date)
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (data) return data;
+
+  const { data: earliest } = await supabase
+    .from('health_weight_log')
+    .select('date, weight_kg')
+    .order('date', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return earliest ?? null;
+}
+
+/**
+ * Everything that depends on the body rather than on what was eaten. Without a date it is
+ * the current profile; with one, the profile as it was that day.
+ */
+export async function getBodyProfile(date?: string) {
+  const [goals, weight] = await Promise.all([getGoals(), date ? getWeightAsOf(date) : getLatestWeight()]);
+  if (!weight) throw new Error('No hay ningún registro de peso.');
+  const weightKg = Number(weight.weight_kg);
+  const { bmr, age } = computeBmr(goals, weightKg);
+  const heightM = Number(goals.height_cm) / 100;
+  return {
+    goals,
+    weightKg,
+    heightCm: Number(goals.height_cm),
+    age,
+    bmr,
+    bmi: Math.round((weightKg / (heightM * heightM)) * 10) / 10,
+  };
+}
+
+/**
+ * Mifflin-St Jeor. TDEE drifts down as weight drops, so a figure calculated once at 87 kg
+ * overstates the deficit months later — this recomputes it from the latest weigh-in.
+ *
+ * The activity factor is 1.2 (sedentary) on purpose: logged workouts are added on top of
+ * it, and a higher factor would count that activity twice.
+ */
+export async function recalculateTdee() {
+  const { goals, weightKg, age, bmr } = await getBodyProfile();
+  const tdee = Math.round(bmr * Number(goals.activity_factor ?? 1.2));
 
   const { error } = await supabase.from('diet_goals').update({ tdee_calories: tdee }).eq('id', 1);
   if (error) throw new Error(`No se pudo actualizar el TDEE: ${error.message}`);
 
-  return { weight_kg: Number(weight.weight_kg), age, bmr: Math.round(bmr), tdee, previous: goals.tdee_calories };
+  return { weight_kg: weightKg, age, bmr: Math.round(bmr), tdee, previous: goals.tdee_calories };
 }
