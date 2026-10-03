@@ -1,7 +1,8 @@
 import { Activity, Mountain, Waves, PersonStanding, Footprints, Bike, Dumbbell, Flower2, Flame, Heart } from 'lucide-react';
 import { type ReactNode } from 'react';
-import { format, isYesterday, isToday, parseISO } from 'date-fns';
+import { format, parseISO, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { toZonedTime } from 'date-fns-tz';
 
 type Workout = {
   type: string;
@@ -17,14 +18,17 @@ type Workout = {
 
 type Props = { workouts: Workout[]; requestedDate?: string };
 
+// "Today" must be Santiago's. This renders on the server, which runs in UTC on Vercel, so
+// isToday()/isYesterday() flipped to the next day at 21:00 and labelled tonight's workouts
+// as "ayer".
 function formatWorkoutDate(dateStr: string, requestedDate?: string): string | null {
-  const d = parseISO(dateStr + 'T12:00:00');
-  const req = requestedDate ? parseISO(requestedDate + 'T12:00:00') : new Date();
+  const now = toZonedTime(new Date(), 'America/Santiago');
+  const today = format(now, 'yyyy-MM-dd');
   // Only show label if workout is from a different day than requested
-  if (dateStr === (requestedDate ?? format(new Date(), 'yyyy-MM-dd'))) return null;
-  if (isToday(d)) return 'hoy';
-  if (isYesterday(d)) return 'ayer';
-  return format(d, "d 'de' MMM", { locale: es });
+  if (dateStr === (requestedDate ?? today)) return null;
+  if (dateStr === today) return 'hoy';
+  if (dateStr === format(subDays(now, 1), 'yyyy-MM-dd')) return 'ayer';
+  return format(parseISO(dateStr + 'T12:00:00'), "d 'de' MMM", { locale: es });
 }
 
 function getWorkoutIcon(type: string): ReactNode {
