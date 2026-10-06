@@ -83,10 +83,18 @@ Devices
 | `/history` | `src/app/history/page.tsx` | Server | History view. Accepts `?period=weekly\|monthly\|yearly&date=yyyy-MM-dd` |
 | `/test-db` | `src/app/test-db/page.tsx` | Server | Debug page: shows env var status + last 5 raw metrics records |
 | `/admin` | `src/app/admin/page.tsx` | Server | Assign networks to locations. Password-gated (`ADMIN_SECRET`, same as `/diet`) — the whole page, not just editing. Not linked from anywhere; reached by URL |
+| `/login` | `src/app/login/page.tsx` | Server | Password form. The only page reachable without a session; honours `?next=` (internal paths only) |
 | `/api/track/wearable` | `src/app/api/track/wearable/route.ts` | API | POST endpoint for Xiaomi Band data ingestion |
 | `/api/summarize` | `src/app/api/summarize/route.ts` | API | POST endpoint that triggers the `summarize-daily` Edge Function. Called internally by the history page. |
 
 All pages use `export const dynamic = 'force-dynamic'`.
+
+**Everything is private.** `src/middleware.ts` requires the `admin_token` cookie
+(`ADMIN_SECRET`) on every page and every API route, GET included: pages redirect to
+`/login`, APIs answer 401. The only exemptions are `/login`, `/api/auth/*`, static assets,
+and the machine routes (`/api/track/*`, `/api/summarize`, `/api/mcp`), which authenticate
+themselves with their own secret or bearer token. The per-page `isOwner` checks in `/admin`,
+`/gastos` and `/diet` predate this and are now defence in depth.
 
 ---
 

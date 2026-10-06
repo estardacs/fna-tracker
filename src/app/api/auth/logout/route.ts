@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
-  const res = NextResponse.redirect(new URL('/diet', req.url), 303);
+  const res = NextResponse.redirect(new URL('/login', req.url), 303);
   res.cookies.set('admin_token', '', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

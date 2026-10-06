@@ -1,39 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-
-// Rutas automáticas (dispositivos/MacroDroid) — nunca requieren auth
-const PUBLIC_WRITE_PATHS = [
+// Rutas que llaman máquinas (dispositivos, MacroDroid, el colector, clientes MCP). No pueden
+// presentar la cookie, así que quedan exentas de este chequeo — no de autenticación: cada una
+// valida su propio secret o bearer token.
+const MACHINE_PATHS = [
   '/api/track/wearable',
   '/api/track/health',
-  '/api/summarize',
-  '/api/auth/login',
-  '/api/auth/logout',
-  // MCP clients cannot present the admin cookie; /api/mcp authenticates itself with a
-  // bearer token. Exempt from this check, not from authentication.
-  '/api/mcp',
-  // El colector bancario corre en la máquina del usuario y tampoco puede presentar la
-  // cookie; /api/track/bank se autentica con BANK_INGEST_TOKEN. Exento de este chequeo, no
-  // de autenticación. Esa ruta no expone GET.
   '/api/track/bank',
+  '/api/summarize',
+  '/api/mcp',
 ];
 
+// Lo único que se ve sin sesión: el formulario de login y el endpoint que lo recibe.
+const AUTH_PATHS = ['/login', '/api/auth/login', '/api/auth/logout'];
+
+const matches = (pathname: string, paths: string[]) =>
+  paths.some((p) => pathname === p || pathname.startsWith(p + '/'));
+
+/**
+ * Todo es privado por defecto: sin la cookie de ADMIN_SECRET no se renderiza ninguna página
+ * ni responde ninguna API, GET incluido. Antes el candado cubría solo las escrituras y cada
+ * página decidía si mostrarse, así que el dashboard y /history quedaban públicos.
+ */
 export function middleware(req: NextRequest) {
-  if (!WRITE_METHODS.has(req.method)) return NextResponse.next();
+  const { pathname, search } = req.nextUrl;
+  if (matches(pathname, MACHINE_PATHS) || matches(pathname, AUTH_PATHS)) {
+    return NextResponse.next();
+  }
 
-  const { pathname } = req.nextUrl;
-  if (PUBLIC_WRITE_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
-
-  const token = req.cookies.get('admin_token')?.value;
   const secret = process.env.ADMIN_SECRET;
+  const token = req.cookies.get('admin_token')?.value;
+  // Fail closed: sin ADMIN_SECRET configurado no entra nadie.
+  if (secret && token === secret) return NextResponse.next();
 
-  if (!secret || !token || token !== secret) {
+  if (pathname.startsWith('/api/')) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
-  return NextResponse.next();
+  const login = new URL('/login', req.url);
+  if (pathname !== '/') login.searchParams.set('next', pathname + search);
+  return NextResponse.redirect(login);
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  // Todo menos los assets de Next y los archivos de /public (íconos, manifest del PWA), que
+  // el navegador pide antes de tener sesión.
+  matcher: ['/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|webp|ico|json|txt)$).*)'],
 };

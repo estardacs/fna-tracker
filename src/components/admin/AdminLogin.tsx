@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { Lock, Loader2 } from 'lucide-react';
 
-/** Full gate, unlike /diet's AuthButton: without the password the panel is not rendered
- *  at all, because it exposes every network this account has connected to. */
-export default function AdminLogin() {
+/** Formulario de contraseña. En /login navega a `redirectTo` al entrar; embebido en una
+ *  página (sin `redirectTo`) la recarga. */
+export default function AdminLogin({ redirectTo }: { redirectTo?: string }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,7 +22,10 @@ export default function AdminLogin() {
       body: JSON.stringify({ password }),
     });
     setLoading(false);
-    if (res.ok) window.location.reload();
+    if (res.ok) {
+      if (redirectTo) window.location.assign(redirectTo);
+      else window.location.reload();
+    }
     else setError('Contraseña incorrecta');
   };
 
@@ -54,8 +57,6 @@ export default function AdminLogin() {
           {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           Entrar
         </button>
-
-        <p className="text-[10px] text-gray-700 mt-4 text-center">La misma contraseña de Dieta</p>
       </div>
     </div>
   );

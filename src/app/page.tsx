@@ -8,6 +8,7 @@ import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton';
 
 import HistoryButton from '@/components/history/HistoryButton';
 import DietButton from '@/components/diet/DietButton';
+import AuthButton from '@/components/diet/AuthButton';
 
 export const dynamic = 'force-dynamic'; // No caching, real-time data
 
@@ -43,6 +44,7 @@ export default async function Home({
         </div>
         
         <div className="flex items-center gap-2 w-full md:w-auto">
+          <AuthButton isOwner={isOwner} />
           <DietButton />
           <HistoryButton />
           <DateNavigator />
